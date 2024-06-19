@@ -23,6 +23,8 @@ const apis: []const vk.ApiInfo = &.{
     vk.extensions.ext_debug_utils,
 };
 
+// c.spv
+
 /// Next, pass the `apis` to the wrappers to create dispatch tables.
 const BaseDispatch = vk.BaseWrapper(apis);
 const InstanceDispatch = vk.InstanceWrapper(apis);

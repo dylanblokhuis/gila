@@ -26,7 +26,6 @@ pub fn build(b: *std.Build) !void {
 
     const vk_headers = b.dependency("Vulkan-Headers", .{});
     // add vulkan headers
-    lib.addIncludePath(vk_headers.path("include"));
     lib.installHeadersDirectory(vk_headers.path("include/vulkan"), "vulkan", .{});
     lib.installHeadersDirectory(vk_headers.path("include/vk_video"), "vk_video", .{});
 
@@ -36,7 +35,6 @@ pub fn build(b: *std.Build) !void {
         lib.addIncludePath(vma_dep.path("include"));
         lib.addCSourceFile(.{ .file = b.path("src/vk_mem_alloc.cpp") });
         lib.defineCMacro("VMA_STATIC_VULKAN_FUNCTIONS", "false");
-        lib.installHeadersDirectory(vma_dep.path("include"), "", .{});
         lib.installHeader(vma_dep.path("include/vk_mem_alloc.h"), "vk_mem_alloc.h");
     }
 
@@ -46,7 +44,6 @@ pub fn build(b: *std.Build) !void {
         lib.addCSourceFile(.{
             .file = spirvr_dep.path("spirv_reflect.c"),
         });
-        lib.addIncludePath(spirvr_dep.path(""));
         lib.installHeadersDirectory(spirvr_dep.path(""), "spirv_reflect", .{});
     }
 
@@ -57,8 +54,13 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         });
         lib.linkLibrary(glfw.artifact("glfw"));
-        lib.addIncludePath(glfw.path("include"));
         lib.installHeadersDirectory(glfw.path("include/GLFW"), "GLFW", .{});
+    }
+
+    // add slang
+    {
+        lib.addLibraryPath(b.path("./slang-2024.1.22-linux-x86_64/bin/linux-x64/release"));
+        lib.linkSystemLibrary("slang");
     }
 
     const mod = b.addModule("gila", .{
@@ -67,6 +69,8 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     mod.linkLibrary(lib);
+    mod.addIncludePath(lib.getEmittedIncludeTree());
+    mod.addLibraryPath(b.path("./slang-2024.1.22-linux-x86_64/bin/linux-x64/release"));
 
     mod.addImport("generational-arena", b.dependency("generational-arena", .{
         .target = target,
@@ -94,6 +98,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         });
         triangle.root_module.addImport("gila", mod);
+        triangle.addIncludePath(lib.getEmittedIncludeTree());
 
         const build_step = b.step("build-example-triangle", "Build the triangle example");
         build_step.dependOn(&triangle.step);
