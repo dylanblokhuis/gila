@@ -1,0 +1,56 @@
+.{
+    .name = "gila",
+    // This is a [Semantic Version](https://semver.org/).
+    // In a future version of Zig it will be used for package deduplication.
+    .version = "0.1.0",
+
+    // This field is optional.
+    // This is currently advisory only; Zig does not yet do anything
+    // with this value.
+    //.minimum_zig_version = "0.11.0",
+
+    // This field is optional.
+    // Each dependency must either provide a `url` and `hash`, or a `path`.
+    // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
+    // Once all dependencies are fetched, `zig build` no longer requires
+    // internet connectivity.
+    .dependencies = .{
+        .vulkan_zig = .{
+            .url = "https://github.com/Snektron/vulkan-zig/archive/a44d86899b5d8e5656c8e80695d1d9f4886540a2.tar.gz",
+            .hash = "12209449a4ffca1976eeeb1b6d5ff04ee688011a6842c79ca78a2de3c12ac7060dc9",
+        },
+        .@"SPIRV-Reflect" = .{
+            .url = "https://github.com/KhronosGroup/SPIRV-Reflect/archive/756e7b13243b5c4b110bb63dba72d10716dd1dfe.tar.gz",
+            .hash = "12209a87c3be1635e808a1822aae870276e9ea9d31c3247485887b9e675386a9872e",
+        },
+        .@"generational-arena" = .{
+            .url = "https://github.com/dylanblokhuis/generational-arena/archive/c9b8049de74209a79a35a2d2bfcbe1f2e6dfda1c.tar.gz",
+            .hash = "1220762006d52c4977c089a0f2f544bdf13dee6805dbb2ca7791e64319124be117be",
+        },
+        .@"Vulkan-Headers" = .{
+            .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/e3c37e6e184a232e10b01dff5a065ce48c047f88.tar.gz",
+            .hash = "1220fb5ea31033a4e65ac735681c79a3118bd42b6ba21bbde945a6f77d3f01f10f5d",
+        },
+        .vma = .{
+            .url = "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/009ecd192c1289c7529bff248a16cfe896254816.tar.gz",
+            .hash = "12202822da2e2a4b1ddfa0ee6ac3ac7e660fab5832f33b7402e19c6a1e891f866950",
+        },
+        .glfw = .{
+            .url = "https://github.com/hexops/glfw/archive/e6f377baed70a7bef9fa08d808f40b64c5136bf6.tar.gz",
+            .hash = "1220c15e66c13f9633fcfd50b5ed265f74f2950c98b1f1defd66298fa027765e0190",
+        },
+    },
+    .paths = .{
+        // This makes *all* files, recursively, included in this package. It is generally
+        // better to explicitly list the files and directories instead, to insure that
+        // fetching from tarballs, file system paths, and version control all result
+        // in the same contents hash.
+        "",
+        // For example...
+        //"build.zig",
+        //"build.zig.zon",
+        //"src",
+        //"LICENSE",
+        //"README.md",
+    },
+}
