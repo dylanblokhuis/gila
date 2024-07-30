@@ -4,6 +4,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const root = @import("root");
 const vk = @This();
+const Allocator = std.mem.Allocator;
 
 pub const vulkan_call_conv: std.builtin.CallingConvention = if (builtin.os.tag == .windows and builtin.cpu.arch == .x86)
     .Stdcall
@@ -23482,8 +23483,12 @@ pub fn BaseWrapper(comptime apis: []const ApiInfo) type {
             var self: Self = undefined;
             inline for (std.meta.fields(Dispatch)) |field| {
                 const name: [*:0]const u8 = @ptrCast(field.name ++ "\x00");
-                const cmd_ptr = loader(Instance.null_handle, name) orelse return error.CommandLoadFailure;
-                @field(self.dispatch, field.name) = @ptrCast(cmd_ptr);
+                if (loader(Instance.null_handle, name)) |cmd_ptr| {
+                    @field(self.dispatch, field.name) = @ptrCast(cmd_ptr);
+                } else {
+                    std.log.err("Command loading failed for \"{s}\".", .{field.name});
+                    return error.CommandLoadFailure;
+                }
             }
             return self;
         }
@@ -23579,6 +23584,23 @@ pub fn BaseWrapper(comptime apis: []const ApiInfo) type {
             }
             return result;
         }
+        pub const EnumerateInstanceLayerPropertiesAllocError =
+            EnumerateInstanceLayerPropertiesError || Allocator.Error;
+        pub fn enumerateInstanceLayerPropertiesAlloc(
+            self: Self,
+            allocator: Allocator,
+        ) EnumerateInstanceLayerPropertiesAllocError![]LayerProperties {
+            var count: u32 = undefined;
+            var data: []LayerProperties = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.enumerateInstanceLayerProperties(&count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.enumerateInstanceLayerProperties(&count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
+        }
         pub const EnumerateInstanceExtensionPropertiesError = error{
             OutOfHostMemory,
             OutOfDeviceMemory,
@@ -23605,6 +23627,24 @@ pub fn BaseWrapper(comptime apis: []const ApiInfo) type {
                 else => return error.Unknown,
             }
             return result;
+        }
+        pub const EnumerateInstanceExtensionPropertiesAllocError =
+            EnumerateInstanceExtensionPropertiesError || Allocator.Error;
+        pub fn enumerateInstanceExtensionPropertiesAlloc(
+            self: Self,
+            p_layer_name: ?[*:0]const u8,
+            allocator: Allocator,
+        ) EnumerateInstanceExtensionPropertiesAllocError![]ExtensionProperties {
+            var count: u32 = undefined;
+            var data: []ExtensionProperties = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.enumerateInstanceExtensionProperties(p_layer_name, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.enumerateInstanceExtensionProperties(p_layer_name, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
     };
 }
@@ -23997,8 +24037,12 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
             var self: Self = undefined;
             inline for (std.meta.fields(Dispatch)) |field| {
                 const name: [*:0]const u8 = @ptrCast(field.name ++ "\x00");
-                const cmd_ptr = loader(instance, name) orelse return error.CommandLoadFailure;
-                @field(self.dispatch, field.name) = @ptrCast(cmd_ptr);
+                if (loader(instance, name)) |cmd_ptr| {
+                    @field(self.dispatch, field.name) = @ptrCast(cmd_ptr);
+                } else {
+                    std.log.err("Command loading failed for \"{s}\".", .{field.name});
+                    return error.CommandLoadFailure;
+                }
             }
             return self;
         }
@@ -24048,6 +24092,24 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
             }
             return result;
         }
+        pub const EnumeratePhysicalDevicesAllocError =
+            EnumeratePhysicalDevicesError || Allocator.Error;
+        pub fn enumeratePhysicalDevicesAlloc(
+            self: Self,
+            instance: Instance,
+            allocator: Allocator,
+        ) EnumeratePhysicalDevicesAllocError![]PhysicalDevice {
+            var count: u32 = undefined;
+            var data: []PhysicalDevice = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.enumeratePhysicalDevices(instance, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.enumeratePhysicalDevices(instance, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
+        }
         pub fn getDeviceProcAddr(
             self: Self,
             device: Device,
@@ -24080,6 +24142,18 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
                 p_queue_family_property_count,
                 p_queue_family_properties,
             );
+        }
+        pub fn getPhysicalDeviceQueueFamilyPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) Allocator.Error![]QueueFamilyProperties {
+            var count: u32 = undefined;
+            self.getPhysicalDeviceQueueFamilyProperties(physical_device, &count, null);
+            const data = try allocator.alloc(QueueFamilyProperties, count);
+            errdefer allocator.free(data);
+            self.getPhysicalDeviceQueueFamilyProperties(physical_device, &count, data.ptr);
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub fn getPhysicalDeviceMemoryProperties(
             self: Self,
@@ -24211,6 +24285,24 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
             }
             return result;
         }
+        pub const EnumerateDeviceLayerPropertiesAllocError =
+            EnumerateDeviceLayerPropertiesError || Allocator.Error;
+        pub fn enumerateDeviceLayerPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) EnumerateDeviceLayerPropertiesAllocError![]LayerProperties {
+            var count: u32 = undefined;
+            var data: []LayerProperties = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.enumerateDeviceLayerProperties(physical_device, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.enumerateDeviceLayerProperties(physical_device, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
+        }
         pub const EnumerateDeviceExtensionPropertiesError = error{
             OutOfHostMemory,
             OutOfDeviceMemory,
@@ -24240,6 +24332,25 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
             }
             return result;
         }
+        pub const EnumerateDeviceExtensionPropertiesAllocError =
+            EnumerateDeviceExtensionPropertiesError || Allocator.Error;
+        pub fn enumerateDeviceExtensionPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            p_layer_name: ?[*:0]const u8,
+            allocator: Allocator,
+        ) EnumerateDeviceExtensionPropertiesAllocError![]ExtensionProperties {
+            var count: u32 = undefined;
+            var data: []ExtensionProperties = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.enumerateDeviceExtensionProperties(physical_device, p_layer_name, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.enumerateDeviceExtensionProperties(physical_device, p_layer_name, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
+        }
         pub fn getPhysicalDeviceSparseImageFormatProperties(
             self: Self,
             physical_device: PhysicalDevice,
@@ -24261,6 +24372,23 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
                 p_property_count,
                 p_properties,
             );
+        }
+        pub fn getPhysicalDeviceSparseImageFormatPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            format: Format,
+            @"type": ImageType,
+            samples: SampleCountFlags,
+            usage: ImageUsageFlags,
+            tiling: ImageTiling,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageFormatProperties {
+            var count: u32 = undefined;
+            self.getPhysicalDeviceSparseImageFormatProperties(physical_device, format, @"type", samples, usage, tiling, &count, null);
+            const data = try allocator.alloc(SparseImageFormatProperties, count);
+            errdefer allocator.free(data);
+            self.getPhysicalDeviceSparseImageFormatProperties(physical_device, format, @"type", samples, usage, tiling, &count, data.ptr);
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub const CreateAndroidSurfaceKHRError = error{
             OutOfHostMemory,
@@ -24571,6 +24699,25 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
             }
             return result;
         }
+        pub const GetPhysicalDeviceSurfaceFormatsAllocKHRError =
+            GetPhysicalDeviceSurfaceFormatsKHRError || Allocator.Error;
+        pub fn getPhysicalDeviceSurfaceFormatsAllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            surface: SurfaceKHR,
+            allocator: Allocator,
+        ) GetPhysicalDeviceSurfaceFormatsAllocKHRError![]SurfaceFormatKHR {
+            var count: u32 = undefined;
+            var data: []SurfaceFormatKHR = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.getPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.getPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
+        }
         pub const GetPhysicalDeviceSurfacePresentModesKHRError = error{
             OutOfHostMemory,
             OutOfDeviceMemory,
@@ -24599,6 +24746,25 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
                 else => return error.Unknown,
             }
             return result;
+        }
+        pub const GetPhysicalDeviceSurfacePresentModesAllocKHRError =
+            GetPhysicalDeviceSurfacePresentModesKHRError || Allocator.Error;
+        pub fn getPhysicalDeviceSurfacePresentModesAllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            surface: SurfaceKHR,
+            allocator: Allocator,
+        ) GetPhysicalDeviceSurfacePresentModesAllocKHRError![]PresentModeKHR {
+            var count: u32 = undefined;
+            var data: []PresentModeKHR = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.getPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.getPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub const CreateViSurfaceNNError = error{
             OutOfHostMemory,
@@ -25152,6 +25318,18 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
                 p_queue_family_properties,
             );
         }
+        pub fn getPhysicalDeviceQueueFamilyProperties2Alloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) Allocator.Error![]QueueFamilyProperties2 {
+            var count: u32 = undefined;
+            self.getPhysicalDeviceQueueFamilyProperties2(physical_device, &count, null);
+            const data = try allocator.alloc(QueueFamilyProperties2, count);
+            errdefer allocator.free(data);
+            self.getPhysicalDeviceQueueFamilyProperties2(physical_device, &count, data.ptr);
+            return if (count == data.len) data else allocator.realloc(data, count);
+        }
         pub fn getPhysicalDeviceQueueFamilyProperties2KHR(
             self: Self,
             physical_device: PhysicalDevice,
@@ -25197,6 +25375,19 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
                 p_property_count,
                 p_properties,
             );
+        }
+        pub fn getPhysicalDeviceSparseImageFormatProperties2Alloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            p_format_info: *const PhysicalDeviceSparseImageFormatInfo2,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageFormatProperties2 {
+            var count: u32 = undefined;
+            self.getPhysicalDeviceSparseImageFormatProperties2(physical_device, p_format_info, &count, null);
+            const data = try allocator.alloc(SparseImageFormatProperties2, count);
+            errdefer allocator.free(data);
+            self.getPhysicalDeviceSparseImageFormatProperties2(physical_device, p_format_info, &count, data.ptr);
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub fn getPhysicalDeviceSparseImageFormatProperties2KHR(
             self: Self,
@@ -25516,6 +25707,24 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
             }
             return result;
         }
+        pub const EnumeratePhysicalDeviceGroupsAllocError =
+            EnumeratePhysicalDeviceGroupsError || Allocator.Error;
+        pub fn enumeratePhysicalDeviceGroupsAlloc(
+            self: Self,
+            instance: Instance,
+            allocator: Allocator,
+        ) EnumeratePhysicalDeviceGroupsAllocError![]PhysicalDeviceGroupProperties {
+            var count: u32 = undefined;
+            var data: []PhysicalDeviceGroupProperties = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.enumeratePhysicalDeviceGroups(instance, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.enumeratePhysicalDeviceGroups(instance, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
+        }
         pub const EnumeratePhysicalDeviceGroupsKHRError = error{
             OutOfHostMemory,
             OutOfDeviceMemory,
@@ -25569,6 +25778,25 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
                 else => return error.Unknown,
             }
             return result;
+        }
+        pub const GetPhysicalDevicePresentRectanglesAllocKHRError =
+            GetPhysicalDevicePresentRectanglesKHRError || Allocator.Error;
+        pub fn getPhysicalDevicePresentRectanglesAllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            surface: SurfaceKHR,
+            allocator: Allocator,
+        ) GetPhysicalDevicePresentRectanglesAllocKHRError![]Rect2D {
+            var count: u32 = undefined;
+            var data: []Rect2D = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.getPhysicalDevicePresentRectanglesKHR(physical_device, surface, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.getPhysicalDevicePresentRectanglesKHR(physical_device, surface, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub const CreateIosSurfaceMVKError = error{
             OutOfHostMemory,
@@ -25720,6 +25948,25 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
             }
             return result;
         }
+        pub const GetPhysicalDeviceSurfaceFormats2AllocKHRError =
+            GetPhysicalDeviceSurfaceFormats2KHRError || Allocator.Error;
+        pub fn getPhysicalDeviceSurfaceFormats2AllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            p_surface_info: *const PhysicalDeviceSurfaceInfo2KHR,
+            allocator: Allocator,
+        ) GetPhysicalDeviceSurfaceFormats2AllocKHRError![]SurfaceFormat2KHR {
+            var count: u32 = undefined;
+            var data: []SurfaceFormat2KHR = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.getPhysicalDeviceSurfaceFormats2KHR(physical_device, p_surface_info, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.getPhysicalDeviceSurfaceFormats2KHR(physical_device, p_surface_info, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
+        }
         pub const GetPhysicalDeviceDisplayProperties2KHRError = error{
             OutOfHostMemory,
             OutOfDeviceMemory,
@@ -25844,6 +26091,24 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
                 else => return error.Unknown,
             }
             return result;
+        }
+        pub const GetPhysicalDeviceCalibrateableTimeDomainsAllocKHRError =
+            GetPhysicalDeviceCalibrateableTimeDomainsKHRError || Allocator.Error;
+        pub fn getPhysicalDeviceCalibrateableTimeDomainsAllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) GetPhysicalDeviceCalibrateableTimeDomainsAllocKHRError![]TimeDomainKHR {
+            var count: u32 = undefined;
+            var data: []TimeDomainKHR = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.getPhysicalDeviceCalibrateableTimeDomainsKHR(physical_device, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.getPhysicalDeviceCalibrateableTimeDomainsKHR(physical_device, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub const GetPhysicalDeviceCalibrateableTimeDomainsEXTError = error{
             OutOfHostMemory,
@@ -26091,6 +26356,24 @@ pub fn InstanceWrapper(comptime apis: []const ApiInfo) type {
                 else => return error.Unknown,
             }
             return result;
+        }
+        pub const GetPhysicalDeviceToolPropertiesAllocError =
+            GetPhysicalDeviceToolPropertiesError || Allocator.Error;
+        pub fn getPhysicalDeviceToolPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) GetPhysicalDeviceToolPropertiesAllocError![]PhysicalDeviceToolProperties {
+            var count: u32 = undefined;
+            var data: []PhysicalDeviceToolProperties = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.getPhysicalDeviceToolProperties(physical_device, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.getPhysicalDeviceToolProperties(physical_device, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub const GetPhysicalDeviceToolPropertiesEXTError = error{
             OutOfHostMemory,
@@ -28181,8 +28464,12 @@ pub fn DeviceWrapper(comptime apis: []const ApiInfo) type {
             var self: Self = undefined;
             inline for (std.meta.fields(Dispatch)) |field| {
                 const name: [*:0]const u8 = @ptrCast(field.name ++ "\x00");
-                const cmd_ptr = loader(device, name) orelse return error.CommandLoadFailure;
-                @field(self.dispatch, field.name) = @ptrCast(cmd_ptr);
+                if (loader(device, name)) |cmd_ptr| {
+                    @field(self.dispatch, field.name) = @ptrCast(cmd_ptr);
+                } else {
+                    std.log.err("Command loading failed for \"{s}\".", .{field.name});
+                    return error.CommandLoadFailure;
+                }
             }
             return self;
         }
@@ -28523,6 +28810,19 @@ pub fn DeviceWrapper(comptime apis: []const ApiInfo) type {
                 p_sparse_memory_requirement_count,
                 p_sparse_memory_requirements,
             );
+        }
+        pub fn getImageSparseMemoryRequirementsAlloc(
+            self: Self,
+            device: Device,
+            image: Image,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageMemoryRequirements {
+            var count: u32 = undefined;
+            self.getImageSparseMemoryRequirements(device, image, &count, null);
+            const data = try allocator.alloc(SparseImageMemoryRequirements, count);
+            errdefer allocator.free(data);
+            self.getImageSparseMemoryRequirements(device, image, &count, data.ptr);
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub const QueueBindSparseError = error{
             OutOfHostMemory,
@@ -29189,6 +29489,25 @@ pub fn DeviceWrapper(comptime apis: []const ApiInfo) type {
                 else => return error.Unknown,
             }
             return result;
+        }
+        pub const GetPipelineCacheDataAllocError =
+            GetPipelineCacheDataError || Allocator.Error;
+        pub fn getPipelineCacheDataAlloc(
+            self: Self,
+            device: Device,
+            pipeline_cache: PipelineCache,
+            allocator: Allocator,
+        ) GetPipelineCacheDataAllocError![]void {
+            var count: u32 = undefined;
+            var data: []void = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.getPipelineCacheData(device, pipeline_cache, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.getPipelineCacheData(device, pipeline_cache, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub const MergePipelineCachesError = error{
             OutOfHostMemory,
@@ -30747,6 +31066,25 @@ pub fn DeviceWrapper(comptime apis: []const ApiInfo) type {
                 else => return error.Unknown,
             }
             return result;
+        }
+        pub const GetSwapchainImagesAllocKHRError =
+            GetSwapchainImagesKHRError || Allocator.Error;
+        pub fn getSwapchainImagesAllocKHR(
+            self: Self,
+            device: Device,
+            swapchain: SwapchainKHR,
+            allocator: Allocator,
+        ) GetSwapchainImagesAllocKHRError![]Image {
+            var count: u32 = undefined;
+            var data: []Image = &.{};
+            errdefer allocator.free(data);
+            var result = Result.incomplete;
+            while (result == .incomplete) {
+                _ = try self.getSwapchainImagesKHR(device, swapchain, &count, null);
+                data = try allocator.realloc(data, count);
+                result = try self.getSwapchainImagesKHR(device, swapchain, &count, data.ptr);
+            }
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub const AcquireNextImageKHRResult = struct {
             result: Result,
@@ -32346,6 +32684,19 @@ pub fn DeviceWrapper(comptime apis: []const ApiInfo) type {
                 p_sparse_memory_requirements,
             );
         }
+        pub fn getImageSparseMemoryRequirements2Alloc(
+            self: Self,
+            device: Device,
+            p_info: *const ImageSparseMemoryRequirementsInfo2,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageMemoryRequirements2 {
+            var count: u32 = undefined;
+            self.getImageSparseMemoryRequirements2(device, p_info, &count, null);
+            const data = try allocator.alloc(SparseImageMemoryRequirements2, count);
+            errdefer allocator.free(data);
+            self.getImageSparseMemoryRequirements2(device, p_info, &count, data.ptr);
+            return if (count == data.len) data else allocator.realloc(data, count);
+        }
         pub fn getImageSparseMemoryRequirements2KHR(
             self: Self,
             device: Device,
@@ -32421,6 +32772,19 @@ pub fn DeviceWrapper(comptime apis: []const ApiInfo) type {
                 p_sparse_memory_requirement_count,
                 p_sparse_memory_requirements,
             );
+        }
+        pub fn getDeviceImageSparseMemoryRequirementsAlloc(
+            self: Self,
+            device: Device,
+            p_info: *const DeviceImageMemoryRequirements,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageMemoryRequirements2 {
+            var count: u32 = undefined;
+            self.getDeviceImageSparseMemoryRequirements(device, p_info, &count, null);
+            const data = try allocator.alloc(SparseImageMemoryRequirements2, count);
+            errdefer allocator.free(data);
+            self.getDeviceImageSparseMemoryRequirements(device, p_info, &count, data.ptr);
+            return if (count == data.len) data else allocator.realloc(data, count);
         }
         pub fn getDeviceImageSparseMemoryRequirementsKHR(
             self: Self,
@@ -38350,6 +38714,16 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 p_physical_devices,
             );
         }
+        pub const EnumeratePhysicalDevicesAllocError = Wrapper.EnumeratePhysicalDevicesAllocError;
+        pub fn enumeratePhysicalDevicesAlloc(
+            self: Self,
+            allocator: Allocator,
+        ) EnumeratePhysicalDevicesAllocError![]PhysicalDevice {
+            return self.wrapper.enumeratePhysicalDevicesAlloc(
+                self.handle,
+                allocator,
+            );
+        }
         pub fn getDeviceProcAddr(
             self: Self,
             device: Device,
@@ -38378,6 +38752,17 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 physical_device,
                 p_queue_family_property_count,
                 p_queue_family_properties,
+            );
+        }
+        pub const GetPhysicalDeviceQueueFamilyPropertiesAllocError = Wrapper.GetPhysicalDeviceQueueFamilyPropertiesAllocError;
+        pub fn getPhysicalDeviceQueueFamilyPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) Allocator.Error![]QueueFamilyProperties {
+            return self.wrapper.getPhysicalDeviceQueueFamilyPropertiesAlloc(
+                physical_device,
+                allocator,
             );
         }
         pub fn getPhysicalDeviceMemoryProperties(
@@ -38451,6 +38836,17 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 p_properties,
             );
         }
+        pub const EnumerateDeviceLayerPropertiesAllocError = Wrapper.EnumerateDeviceLayerPropertiesAllocError;
+        pub fn enumerateDeviceLayerPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) EnumerateDeviceLayerPropertiesAllocError![]LayerProperties {
+            return self.wrapper.enumerateDeviceLayerPropertiesAlloc(
+                physical_device,
+                allocator,
+            );
+        }
         pub const EnumerateDeviceExtensionPropertiesError = Wrapper.EnumerateDeviceExtensionPropertiesError;
         pub fn enumerateDeviceExtensionProperties(
             self: Self,
@@ -38464,6 +38860,19 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 p_layer_name,
                 p_property_count,
                 p_properties,
+            );
+        }
+        pub const EnumerateDeviceExtensionPropertiesAllocError = Wrapper.EnumerateDeviceExtensionPropertiesAllocError;
+        pub fn enumerateDeviceExtensionPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            p_layer_name: ?[*:0]const u8,
+            allocator: Allocator,
+        ) EnumerateDeviceExtensionPropertiesAllocError![]ExtensionProperties {
+            return self.wrapper.enumerateDeviceExtensionPropertiesAlloc(
+                physical_device,
+                p_layer_name,
+                allocator,
             );
         }
         pub fn getPhysicalDeviceSparseImageFormatProperties(
@@ -38486,6 +38895,27 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 tiling,
                 p_property_count,
                 p_properties,
+            );
+        }
+        pub const GetPhysicalDeviceSparseImageFormatPropertiesAllocError = Wrapper.GetPhysicalDeviceSparseImageFormatPropertiesAllocError;
+        pub fn getPhysicalDeviceSparseImageFormatPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            format: Format,
+            @"type": ImageType,
+            samples: SampleCountFlags,
+            usage: ImageUsageFlags,
+            tiling: ImageTiling,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageFormatProperties {
+            return self.wrapper.getPhysicalDeviceSparseImageFormatPropertiesAlloc(
+                physical_device,
+                format,
+                @"type",
+                samples,
+                usage,
+                tiling,
+                allocator,
             );
         }
         pub const CreateAndroidSurfaceKHRError = Wrapper.CreateAndroidSurfaceKHRError;
@@ -38646,6 +39076,19 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 p_surface_formats,
             );
         }
+        pub const GetPhysicalDeviceSurfaceFormatsAllocKHRError = Wrapper.GetPhysicalDeviceSurfaceFormatsAllocKHRError;
+        pub fn getPhysicalDeviceSurfaceFormatsAllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            surface: SurfaceKHR,
+            allocator: Allocator,
+        ) GetPhysicalDeviceSurfaceFormatsAllocKHRError![]SurfaceFormatKHR {
+            return self.wrapper.getPhysicalDeviceSurfaceFormatsAllocKHR(
+                physical_device,
+                surface,
+                allocator,
+            );
+        }
         pub const GetPhysicalDeviceSurfacePresentModesKHRError = Wrapper.GetPhysicalDeviceSurfacePresentModesKHRError;
         pub fn getPhysicalDeviceSurfacePresentModesKHR(
             self: Self,
@@ -38659,6 +39102,19 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 surface,
                 p_present_mode_count,
                 p_present_modes,
+            );
+        }
+        pub const GetPhysicalDeviceSurfacePresentModesAllocKHRError = Wrapper.GetPhysicalDeviceSurfacePresentModesAllocKHRError;
+        pub fn getPhysicalDeviceSurfacePresentModesAllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            surface: SurfaceKHR,
+            allocator: Allocator,
+        ) GetPhysicalDeviceSurfacePresentModesAllocKHRError![]PresentModeKHR {
+            return self.wrapper.getPhysicalDeviceSurfacePresentModesAllocKHR(
+                physical_device,
+                surface,
+                allocator,
             );
         }
         pub const CreateViSurfaceNNError = Wrapper.CreateViSurfaceNNError;
@@ -39010,6 +39466,17 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 p_queue_family_properties,
             );
         }
+        pub const GetPhysicalDeviceQueueFamilyProperties2AllocError = Wrapper.GetPhysicalDeviceQueueFamilyProperties2AllocError;
+        pub fn getPhysicalDeviceQueueFamilyProperties2Alloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) Allocator.Error![]QueueFamilyProperties2 {
+            return self.wrapper.getPhysicalDeviceQueueFamilyProperties2Alloc(
+                physical_device,
+                allocator,
+            );
+        }
         pub fn getPhysicalDeviceQueueFamilyProperties2KHR(
             self: Self,
             physical_device: PhysicalDevice,
@@ -39054,6 +39521,19 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 p_format_info,
                 p_property_count,
                 p_properties,
+            );
+        }
+        pub const GetPhysicalDeviceSparseImageFormatProperties2AllocError = Wrapper.GetPhysicalDeviceSparseImageFormatProperties2AllocError;
+        pub fn getPhysicalDeviceSparseImageFormatProperties2Alloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            p_format_info: *const PhysicalDeviceSparseImageFormatInfo2,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageFormatProperties2 {
+            return self.wrapper.getPhysicalDeviceSparseImageFormatProperties2Alloc(
+                physical_device,
+                p_format_info,
+                allocator,
             );
         }
         pub fn getPhysicalDeviceSparseImageFormatProperties2KHR(
@@ -39265,6 +39745,16 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 p_physical_device_group_properties,
             );
         }
+        pub const EnumeratePhysicalDeviceGroupsAllocError = Wrapper.EnumeratePhysicalDeviceGroupsAllocError;
+        pub fn enumeratePhysicalDeviceGroupsAlloc(
+            self: Self,
+            allocator: Allocator,
+        ) EnumeratePhysicalDeviceGroupsAllocError![]PhysicalDeviceGroupProperties {
+            return self.wrapper.enumeratePhysicalDeviceGroupsAlloc(
+                self.handle,
+                allocator,
+            );
+        }
         pub const EnumeratePhysicalDeviceGroupsKHRError = Wrapper.EnumeratePhysicalDeviceGroupsKHRError;
         pub fn enumeratePhysicalDeviceGroupsKHR(
             self: Self,
@@ -39290,6 +39780,19 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 surface,
                 p_rect_count,
                 p_rects,
+            );
+        }
+        pub const GetPhysicalDevicePresentRectanglesAllocKHRError = Wrapper.GetPhysicalDevicePresentRectanglesAllocKHRError;
+        pub fn getPhysicalDevicePresentRectanglesAllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            surface: SurfaceKHR,
+            allocator: Allocator,
+        ) GetPhysicalDevicePresentRectanglesAllocKHRError![]Rect2D {
+            return self.wrapper.getPhysicalDevicePresentRectanglesAllocKHR(
+                physical_device,
+                surface,
+                allocator,
             );
         }
         pub const CreateIosSurfaceMVKError = Wrapper.CreateIosSurfaceMVKError;
@@ -39368,6 +39871,19 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 p_surface_formats,
             );
         }
+        pub const GetPhysicalDeviceSurfaceFormats2AllocKHRError = Wrapper.GetPhysicalDeviceSurfaceFormats2AllocKHRError;
+        pub fn getPhysicalDeviceSurfaceFormats2AllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            p_surface_info: *const PhysicalDeviceSurfaceInfo2KHR,
+            allocator: Allocator,
+        ) GetPhysicalDeviceSurfaceFormats2AllocKHRError![]SurfaceFormat2KHR {
+            return self.wrapper.getPhysicalDeviceSurfaceFormats2AllocKHR(
+                physical_device,
+                p_surface_info,
+                allocator,
+            );
+        }
         pub const GetPhysicalDeviceDisplayProperties2KHRError = Wrapper.GetPhysicalDeviceDisplayProperties2KHRError;
         pub fn getPhysicalDeviceDisplayProperties2KHR(
             self: Self,
@@ -39433,6 +39949,17 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 physical_device,
                 p_time_domain_count,
                 p_time_domains,
+            );
+        }
+        pub const GetPhysicalDeviceCalibrateableTimeDomainsAllocKHRError = Wrapper.GetPhysicalDeviceCalibrateableTimeDomainsAllocKHRError;
+        pub fn getPhysicalDeviceCalibrateableTimeDomainsAllocKHR(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) GetPhysicalDeviceCalibrateableTimeDomainsAllocKHRError![]TimeDomainKHR {
+            return self.wrapper.getPhysicalDeviceCalibrateableTimeDomainsAllocKHR(
+                physical_device,
+                allocator,
             );
         }
         pub const GetPhysicalDeviceCalibrateableTimeDomainsEXTError = Wrapper.GetPhysicalDeviceCalibrateableTimeDomainsEXTError;
@@ -39575,6 +40102,17 @@ pub fn InstanceProxy(comptime apis: []const ApiInfo) type {
                 physical_device,
                 p_tool_count,
                 p_tool_properties,
+            );
+        }
+        pub const GetPhysicalDeviceToolPropertiesAllocError = Wrapper.GetPhysicalDeviceToolPropertiesAllocError;
+        pub fn getPhysicalDeviceToolPropertiesAlloc(
+            self: Self,
+            physical_device: PhysicalDevice,
+            allocator: Allocator,
+        ) GetPhysicalDeviceToolPropertiesAllocError![]PhysicalDeviceToolProperties {
+            return self.wrapper.getPhysicalDeviceToolPropertiesAlloc(
+                physical_device,
+                allocator,
             );
         }
         pub const GetPhysicalDeviceToolPropertiesEXTError = Wrapper.GetPhysicalDeviceToolPropertiesEXTError;
@@ -39917,6 +40455,18 @@ pub fn DeviceProxy(comptime apis: []const ApiInfo) type {
                 image,
                 p_sparse_memory_requirement_count,
                 p_sparse_memory_requirements,
+            );
+        }
+        pub const GetImageSparseMemoryRequirementsAllocError = Wrapper.GetImageSparseMemoryRequirementsAllocError;
+        pub fn getImageSparseMemoryRequirementsAlloc(
+            self: Self,
+            image: Image,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageMemoryRequirements {
+            return self.wrapper.getImageSparseMemoryRequirementsAlloc(
+                self.handle,
+                image,
+                allocator,
             );
         }
         pub const QueueBindSparseError = Wrapper.QueueBindSparseError;
@@ -40303,6 +40853,18 @@ pub fn DeviceProxy(comptime apis: []const ApiInfo) type {
                 pipeline_cache,
                 p_data_size,
                 p_data,
+            );
+        }
+        pub const GetPipelineCacheDataAllocError = Wrapper.GetPipelineCacheDataAllocError;
+        pub fn getPipelineCacheDataAlloc(
+            self: Self,
+            pipeline_cache: PipelineCache,
+            allocator: Allocator,
+        ) GetPipelineCacheDataAllocError![]void {
+            return self.wrapper.getPipelineCacheDataAlloc(
+                self.handle,
+                pipeline_cache,
+                allocator,
             );
         }
         pub const MergePipelineCachesError = Wrapper.MergePipelineCachesError;
@@ -41555,6 +42117,18 @@ pub fn DeviceProxy(comptime apis: []const ApiInfo) type {
                 p_swapchain_images,
             );
         }
+        pub const GetSwapchainImagesAllocKHRError = Wrapper.GetSwapchainImagesAllocKHRError;
+        pub fn getSwapchainImagesAllocKHR(
+            self: Self,
+            swapchain: SwapchainKHR,
+            allocator: Allocator,
+        ) GetSwapchainImagesAllocKHRError![]Image {
+            return self.wrapper.getSwapchainImagesAllocKHR(
+                self.handle,
+                swapchain,
+                allocator,
+            );
+        }
         pub const AcquireNextImageKHRError = Wrapper.AcquireNextImageKHRError;
         pub const AcquireNextImageKHRResult = Wrapper.AcquireNextImageKHRResult;
         pub fn acquireNextImageKHR(
@@ -42513,6 +43087,18 @@ pub fn DeviceProxy(comptime apis: []const ApiInfo) type {
                 p_sparse_memory_requirements,
             );
         }
+        pub const GetImageSparseMemoryRequirements2AllocError = Wrapper.GetImageSparseMemoryRequirements2AllocError;
+        pub fn getImageSparseMemoryRequirements2Alloc(
+            self: Self,
+            p_info: *const ImageSparseMemoryRequirementsInfo2,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageMemoryRequirements2 {
+            return self.wrapper.getImageSparseMemoryRequirements2Alloc(
+                self.handle,
+                p_info,
+                allocator,
+            );
+        }
         pub fn getImageSparseMemoryRequirements2KHR(
             self: Self,
             p_info: *const ImageSparseMemoryRequirementsInfo2,
@@ -42581,6 +43167,18 @@ pub fn DeviceProxy(comptime apis: []const ApiInfo) type {
                 p_info,
                 p_sparse_memory_requirement_count,
                 p_sparse_memory_requirements,
+            );
+        }
+        pub const GetDeviceImageSparseMemoryRequirementsAllocError = Wrapper.GetDeviceImageSparseMemoryRequirementsAllocError;
+        pub fn getDeviceImageSparseMemoryRequirementsAlloc(
+            self: Self,
+            p_info: *const DeviceImageMemoryRequirements,
+            allocator: Allocator,
+        ) Allocator.Error![]SparseImageMemoryRequirements2 {
+            return self.wrapper.getDeviceImageSparseMemoryRequirementsAlloc(
+                self.handle,
+                p_info,
+                allocator,
             );
         }
         pub fn getDeviceImageSparseMemoryRequirementsKHR(
