@@ -169,24 +169,23 @@ pub fn reset(self: *Self) !void {
 }
 
 /// submits the current command buffer to the graphics queue, does not BLOCK!!
-// pub fn submit(self: *Self) !void {
-//     const buffer = self.command_buffers[self.current_frame_index];
-//     try self.gc.device.endCommandBuffer(buffer);
+pub fn submit(self: *Self) !void {
+    const buffer = self.command_buffers[self.current_frame_index];
+    try self.gc.device.endCommandBuffer(buffer);
 
-//     const fence = self.fences[self.current_frame_index];
-//     try self.gc.device.queueSubmit(self.gc.graphics_queue.handle, 1, @ptrCast(&vk.SubmitInfo{
-//         .command_buffer_count = 1,
-//         .p_command_buffers = @ptrCast(&buffer),
-//     }), fence);
-// }
+    const fence = self.fences[self.current_frame_index];
+    try self.gc.device.queueSubmit(self.gc.graphics_queue.handle, 1, @ptrCast(&vk.SubmitInfo{
+        .command_buffer_count = 1,
+        .p_command_buffers = @ptrCast(&buffer),
+    }), fence);
+}
 
 /// submits the current command buffer to the graphics queue, BLOCKS until the command buffer is done executing
-// pub fn submitBlocking(self: *Self) !void {
-//     _ = self.submit();
-//     const fence = self.fences[self.current_frame_index];
-//     _ = try self.gc.device.waitForFences(1, @ptrCast(&fence), vk.TRUE, std.math.maxInt(usize));
-//     self.reset();
-// }
+pub fn submitBlocking(self: *Self) !void {
+    try self.submit();
+    const fence = self.fences[self.current_frame_index];
+    _ = try self.gc.device.waitForFences(1, @ptrCast(&fence), vk.TRUE, std.math.maxInt(usize));
+}
 
 pub fn submitAndPresent(self: *Self, swapchain: *Gc.Swapchain) !Gc.Swapchain.PresentState {
     const barrier = vk.ImageMemoryBarrier2{

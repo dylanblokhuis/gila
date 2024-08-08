@@ -16,15 +16,15 @@ pub const Vertex = packed struct {
 
 const Triangle = [_]Vertex{
     Vertex{
-        .position = .{ -0.5, -0.5 },
+        .position = .{ -0.5, 0.5 },
         .color = .{ 1, 0, 0 },
     },
     Vertex{
-        .position = .{ 0.5, -0.5 },
+        .position = .{ 0.5, 0.5 },
         .color = .{ 0, 1, 0 },
     },
     Vertex{
-        .position = .{ 0, 0.5 },
+        .position = .{ 0, -0.5 },
         .color = .{ 0, 0, 1 },
     },
 };
@@ -118,8 +118,22 @@ pub fn main() !void {
     });
 
     var encoder = try CommandEncoder.init(&gc, .{
-        .max_inflight = 2,
+        .max_inflight = swapchain.swap_images.len,
     });
+
+    {
+        try encoder.reset();
+        encoder.bufferBarrier(vertex_buffer, .{
+            .new_access_mask = .{ .transfer_write_bit = true },
+            .new_stage_mask = .{ .all_transfer_bit = true },
+        });
+        try encoder.writeBuffer(vertex_buffer, std.mem.sliceAsBytes(&Triangle));
+        encoder.bufferBarrier(vertex_buffer, .{
+            .new_access_mask = .{ .vertex_attribute_read_bit = true },
+            .new_stage_mask = .{ .vertex_attribute_input_bit = true },
+        });
+        try encoder.submitBlocking();
+    }
 
     while (c.glfwWindowShouldClose(window) == 0) {
         var w: c_int = undefined;
@@ -133,17 +147,6 @@ pub fn main() !void {
         }
 
         try encoder.reset();
-
-        encoder.bufferBarrier(vertex_buffer, .{
-            .new_access_mask = .{ .transfer_write_bit = true },
-            .new_stage_mask = .{ .all_transfer_bit = true },
-        });
-        try encoder.writeBuffer(vertex_buffer, std.mem.sliceAsBytes(&Triangle));
-        encoder.bufferBarrier(vertex_buffer, .{
-            .new_access_mask = .{ .vertex_attribute_read_bit = true },
-            .new_stage_mask = .{ .vertex_attribute_input_bit = true },
-        });
-
         {
             encoder.imageBarrier(texture, .{
                 .new_access_mask = .{ .color_attachment_write_bit = true },
@@ -178,7 +181,6 @@ pub fn main() !void {
         });
         encoder.blitToSurface(&swapchain, texture);
 
-        // try encoder.submit();
         const state = try encoder.submitAndPresent(&swapchain);
         if (state == .suboptimal or swapchain.extent.width != @as(u32, @intCast(w)) or swapchain.extent.height != @as(u32, @intCast(h))) {
             try swapchain.recreate(.{
