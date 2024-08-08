@@ -15,10 +15,15 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const use_lld = true;
+    const use_llvm = true;
+
     const lib = b.addStaticLibrary(.{
         .name = "gila",
         .target = target,
         .optimize = optimize,
+        .use_lld = use_lld,
+        .use_llvm = use_llvm,
     });
 
     lib.linkLibC();
@@ -58,11 +63,13 @@ pub fn build(b: *std.Build) !void {
     }
 
     // add slang
-    const slang_link_path = blk: {
+    const slang_link_path: ?std.Build.LazyPath = blk: {
         var download_step = SlangDownloadBinaryStep.init(b, lib, .{});
         lib.step.dependOn(&download_step.step);
         lib.linkSystemLibrary("slang");
-        const link_path = try download_step.linkablePath();
+        const link_path = download_step.linkablePath() catch {
+            break :blk null;
+        };
         lib.addLibraryPath(link_path);
         break :blk link_path;
     };
@@ -74,7 +81,7 @@ pub fn build(b: *std.Build) !void {
     });
     mod.linkLibrary(lib);
     mod.addIncludePath(lib.getEmittedIncludeTree());
-    mod.addLibraryPath(slang_link_path);
+    if (slang_link_path) |p| mod.addLibraryPath(p);
 
     const generational_arena = b.dependency("generational-arena", .{
         .target = target,
@@ -101,6 +108,8 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = b.path("examples/triangle.zig"),
             .target = target,
             .optimize = optimize,
+            .use_lld = use_lld,
+            .use_llvm = use_llvm,
         });
         triangle.root_module.addImport("gila", mod);
         triangle.addIncludePath(lib.getEmittedIncludeTree());
@@ -150,12 +159,12 @@ pub const SlangDownloadBinaryStep = struct {
         try std.fs.cwd().makePath(cache_dir_path);
         var cache_dir = try std.fs.openDirAbsolute(cache_dir_path, .{});
         defer cache_dir.close();
-        errdefer {
-            std.log.err("Cleaning up...", .{});
-            std.fs.deleteTreeAbsolute(cache_dir_path) catch |err| {
-                std.log.err("Failed to cleanup cache dir: {}", .{err});
-            };
-        }
+        // errdefer {
+        //     std.log.err("Cleaning up...", .{});
+        //     std.fs.deleteTreeAbsolute(cache_dir_path) catch |err| {
+        //         std.log.err("Failed to cleanup cache dir: {}", .{err});
+        //     };
+        // }
 
         const target = self.target.rootModuleTarget();
         const cache_file_name = self.b.fmt("{s}-{s}-{s}", .{

@@ -74,7 +74,6 @@ pub fn initRecycle(gc: *Gc, extent: vk.Extent2D, old_handle: vk.SwapchainKHR) !S
         for (swap_images) |si| si.deinit(gc);
         gc.allocator.free(swap_images);
     }
-
     var next_image_acquired = try gc.device.createSemaphore(&.{}, null);
     errdefer gc.device.destroySemaphore(next_image_acquired, null);
 
@@ -98,25 +97,23 @@ pub fn initRecycle(gc: *Gc, extent: vk.Extent2D, old_handle: vk.SwapchainKHR) !S
 
 fn deinitExceptSwapchain(self: Self) void {
     for (self.swap_images) |si| si.deinit(self.gc);
-    self.allocator.free(self.swap_images);
-    self.gc.dev.destroySemaphore(self.next_image_acquired, null);
+    self.gc.allocator.free(self.swap_images);
+    self.gc.device.destroySemaphore(self.next_image_acquired, null);
 }
 
-pub fn waitForAllFences(self: Self) !void {
-    for (self.swap_images) |si| si.waitForFence(self.gc) catch {};
-}
+// pub fn waitForAllFences(self: Self) !void {
+//     for (self.swap_images) |si| si.waitForFence(self.gc) catch {};
+// }
 
 pub fn deinit(self: Self) void {
     self.deinitExceptSwapchain();
-    self.gc.dev.destroySwapchainKHR(self.handle, null);
+    self.gc.device.destroySwapchainKHR(self.handle, null);
 }
 
 pub fn recreate(self: *Self, new_extent: vk.Extent2D) !void {
-    const gc = self.gc;
-    const allocator = self.allocator;
     const old_handle = self.handle;
     self.deinitExceptSwapchain();
-    self.* = try initRecycle(gc, allocator, new_extent, old_handle);
+    self.* = try initRecycle(self.gc, new_extent, old_handle);
 }
 
 pub fn currentImage(self: Self) vk.Image {
@@ -127,43 +124,74 @@ pub fn currentSwapImage(self: Self) *const SwapImage {
     return &self.swap_images[self.image_index];
 }
 
-pub fn present(self: *Self, cmdbuf: vk.CommandBuffer) !PresentState {
-    // Simple method:
-    // 1) Acquire next image
-    // 2) Wait for and reset fence of the acquired image
-    // 3) Submit command buffer with fence of acquired image,
-    //    dependendent on the semaphore signalled by the first step.
-    // 4) Present current frame, dependent on semaphore signalled by previous step
-    // Problem: This way we can't reference the current image while rendering.
-    // Better method: Shuffle the steps around such that acquire next image is the last step,
-    // leaving the swapchain in a state with the current image.
-    // 1) Wait for and reset fence of current image
-    // 2) Submit command buffer, signalling fence of current image and dependent on
-    //    the semaphore signalled by step 4.
-    // 3) Present current frame, dependent on semaphore signalled by the submit
-    // 4) Acquire next image, signalling its semaphore
-    // One problem that arises is that we can't know beforehand which semaphore to signal,
-    // so we keep an extra auxilery semaphore that is swapped around
+pub fn present(self: *Self, cmdbuf: vk.CommandBuffer, fence: vk.Fence) !PresentState {
+    const barrier = vk.ImageMemoryBarrier2{
+        .image = self.currentImage(),
+        .subresource_range = .{
+            .aspect_mask = .{ .color_bit = true },
+            .base_mip_level = 0,
+            .level_count = 1,
+            .base_array_layer = 0,
+            .layer_count = 1,
+        },
+        .src_stage_mask = .{
+            .blit_bit = true,
+        },
+        .dst_stage_mask = .{
+            // .all_commands_bit = true,
+        },
+        .old_layout = .transfer_dst_optimal,
+        .new_layout = .present_src_khr,
+        .src_access_mask = .{
+            // .memory_read_bit = true,
+            // .memory_write_bit = true,
+        },
+        .dst_access_mask = .{
+            // .memory_read_bit = true,
+            // .memory_write_bit = true,
+        },
+        // .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+        // .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+        .src_queue_family_index = self.gc.graphics_queue.family,
+        .dst_queue_family_index = self.gc.graphics_queue.family,
+    };
 
-    // Step 1: Make sure the current frame has finished rendering
+    self.gc.device.cmdPipelineBarrier2(cmdbuf, &.{
+        .image_memory_barrier_count = 1,
+        .p_image_memory_barriers = @ptrCast(&barrier),
+    });
+
     const current = self.currentSwapImage();
-    try current.waitForFence(self.gc);
-    try self.gc.dev.resetFences(1, @ptrCast(&current.frame_fence));
+    _ = try self.gc.device.waitForFences(1, @ptrCast(&current.frame_fence), vk.TRUE, std.math.maxInt(u64));
+    try self.gc.device.resetFences(1, @ptrCast(&current.frame_fence));
 
-    // Step 2: Submit the command buffer
-    const wait_stage = [_]vk.PipelineStageFlags{.{ .top_of_pipe_bit = true }};
-    try self.gc.dev.queueSubmit(self.gc.graphics_queue.handle, 1, &[_]vk.SubmitInfo{.{
-        .wait_semaphore_count = 1,
-        .p_wait_semaphores = @ptrCast(&current.image_acquired),
-        .p_wait_dst_stage_mask = &wait_stage,
-        .command_buffer_count = 1,
-        .p_command_buffers = @ptrCast(&cmdbuf),
-        .signal_semaphore_count = 1,
-        .p_signal_semaphores = @ptrCast(&current.render_finished),
-    }}, current.frame_fence);
+    const acquire_complete_info = vk.SemaphoreSubmitInfo{
+        .semaphore = current.image_acquired,
+        .stage_mask = .{ .color_attachment_output_bit = true },
+        .device_index = 0,
+        .value = 0, // noop
+    };
+    const commend_buffer_info = vk.CommandBufferSubmitInfo{
+        .command_buffer = cmdbuf,
+        .device_mask = 0,
+    };
+    const rendering_complete_info = vk.SemaphoreSubmitInfo{
+        .semaphore = current.render_finished,
+        .stage_mask = .{ .color_attachment_output_bit = true },
+        .device_index = 0,
+        .value = 0, // noop
+    };
 
-    // Step 3: Present the current frame
-    _ = try self.gc.dev.queuePresentKHR(self.gc.present_queue.handle, &.{
+    try self.gc.device.queueSubmit2(self.gc.graphics_queue.handle, 1, &[_]vk.SubmitInfo2{vk.SubmitInfo2{
+        .wait_semaphore_info_count = 1,
+        .p_wait_semaphore_infos = @ptrCast(&acquire_complete_info),
+        .command_buffer_info_count = 1,
+        .p_command_buffer_infos = @ptrCast(&commend_buffer_info),
+        .signal_semaphore_info_count = 1,
+        .p_signal_semaphore_infos = @ptrCast(&rendering_complete_info),
+    }}, fence);
+
+    _ = try self.gc.device.queuePresentKHR(self.gc.present_queue.handle, &.{
         .wait_semaphore_count = 1,
         .p_wait_semaphores = @ptrCast(&current.render_finished),
         .swapchain_count = 1,
@@ -171,12 +199,11 @@ pub fn present(self: *Self, cmdbuf: vk.CommandBuffer) !PresentState {
         .p_image_indices = @ptrCast(&self.image_index),
     });
 
-    // Step 4: Acquire next frame
-    const result = try self.gc.dev.acquireNextImageKHR(
+    const result = try self.gc.device.acquireNextImageKHR(
         self.handle,
         std.math.maxInt(u64),
         self.next_image_acquired,
-        .null_handle,
+        current.frame_fence,
     );
 
     std.mem.swap(vk.Semaphore, &self.swap_images[result.image_index].image_acquired, &self.next_image_acquired);
@@ -231,15 +258,10 @@ const SwapImage = struct {
     }
 
     fn deinit(self: SwapImage, gc: *Gc) void {
-        self.waitForFence(gc) catch return;
         gc.device.destroyImageView(self.view, null);
         gc.device.destroySemaphore(self.image_acquired, null);
         gc.device.destroySemaphore(self.render_finished, null);
         gc.device.destroyFence(self.frame_fence, null);
-    }
-
-    fn waitForFence(self: SwapImage, gc: *Gc) !void {
-        _ = try gc.device.waitForFences(1, @ptrCast(&self.frame_fence), vk.TRUE, std.math.maxInt(u64));
     }
 };
 

@@ -5,11 +5,87 @@ const vk = Gc.vk;
 const Self = @This();
 
 gc: *Gc,
-swapchain: *Gc.Swapchain,
 command_pool: vk.CommandPool,
 command_buffers: []vk.CommandBuffer,
 fences: []vk.Fence,
+delete_queues: []DeleteQueue,
 current_frame_index: usize,
+tracker: ResourceTracker,
+
+pub const DeleteQueue = std.ArrayListUnmanaged(union(enum) {
+    buffer: Gc.BufferHandle,
+    texture: Gc.TextureHandle,
+});
+
+const ResourceTracker = struct {
+    pub const TextureResource = struct {
+        current_layout: vk.ImageLayout,
+        current_access: vk.AccessFlags2,
+        current_stage: vk.PipelineStageFlags2,
+        current_queue_family: u32 = vk.QUEUE_FAMILY_IGNORED,
+    };
+    pub const BufferResource = struct {
+        current_access: vk.AccessFlags2,
+        current_stage: vk.PipelineStageFlags2,
+        current_queue_family: u32 = vk.QUEUE_FAMILY_IGNORED,
+    };
+    pub const Resource = union(enum) {
+        texture: TextureResource,
+        buffer: BufferResource,
+    };
+    const ResourceId = union(enum) {
+        texture: Gc.TextureHandle,
+        buffer: Gc.BufferHandle,
+    };
+
+    // stage_mask: vk.PipelineStageFlags2,
+    resources: std.AutoArrayHashMap(ResourceId, Resource),
+
+    pub fn init(allocator: std.mem.Allocator) !ResourceTracker {
+        return ResourceTracker{
+            .resources = std.AutoArrayHashMap(ResourceId, Resource).init(allocator),
+        };
+    }
+
+    pub fn reset(self: *ResourceTracker) void {
+        self.resources.clearRetainingCapacity();
+    }
+
+    pub fn addTexture(self: *ResourceTracker, texture: Gc.TextureHandle, resource: TextureResource) void {
+        self.resources.putNoClobber(ResourceId{ .texture = texture }, Resource{
+            .texture = resource,
+        });
+    }
+
+    pub fn addBuffer(self: *ResourceTracker, buffer: Gc.BufferHandle, resource: BufferResource) void {
+        self.resources.putNoClobber(ResourceId{ .buffer = buffer }, Resource{
+            .buffer = resource,
+        });
+    }
+
+    pub fn getTexture(self: *ResourceTracker, texture: Gc.TextureHandle) *TextureResource {
+        const res = self.resources.getOrPutValue(ResourceId{ .texture = texture }, .{
+            .texture = TextureResource{
+                .current_layout = .undefined,
+                .current_access = .{},
+                .current_stage = .{},
+            },
+        }) catch unreachable;
+
+        return &res.value_ptr.texture;
+    }
+
+    pub fn getBuffer(self: *ResourceTracker, buffer: Gc.BufferHandle) *BufferResource {
+        const res = self.resources.getOrPutValue(ResourceId{ .buffer = buffer }, .{
+            .buffer = BufferResource{
+                .current_access = .{},
+                .current_stage = .{},
+            },
+        }) catch unreachable;
+
+        return &res.value_ptr.buffer;
+    }
+};
 
 const CommandEncoderOptions = struct {
     /// The maximum number of commands that will be allocated and used, will block if a new command is issued while the others are in flight.
@@ -26,10 +102,10 @@ pub fn init(
 
     const command_buffers = try gc.allocator.alloc(vk.CommandBuffer, options.max_inflight);
     try gc.device.allocateCommandBuffers(&.{
-        .command_buffer_count = options.max_inflight,
+        .command_buffer_count = @intCast(options.max_inflight),
         .command_pool = pool,
         .level = .primary,
-    }, command_buffers.len);
+    }, command_buffers.ptr);
 
     const fences = try gc.allocator.alloc(vk.Fence, options.max_inflight);
     for (0..options.max_inflight) |i| {
@@ -37,7 +113,12 @@ pub fn init(
             .flags = .{
                 .signaled_bit = true,
             },
-        });
+        }, null);
+    }
+
+    const delete_queues = try gc.allocator.alloc(DeleteQueue, options.max_inflight);
+    for (0..options.max_inflight) |i| {
+        delete_queues[i] = DeleteQueue{};
     }
 
     return Self{
@@ -45,31 +126,84 @@ pub fn init(
         .command_pool = pool,
         .command_buffers = command_buffers,
         .fences = fences,
-        .current_frame = command_buffers.len,
+        .current_frame_index = command_buffers.len - 1,
+        .delete_queues = delete_queues,
+        .tracker = try ResourceTracker.init(gc.allocator),
     };
 }
 
 inline fn getCommandBuffer(self: *Self) vk.CommandBuffer {
-    return self.command_buffers[self.current_frame.index];
+    if (self.current_frame_index >= self.command_buffers.len) {
+        std.debug.panic("Must reset command encoder before using it", .{});
+    }
+    return self.command_buffers[self.current_frame_index];
 }
 
 // reset should be called at the beginning of each frame
 pub fn reset(self: *Self) !void {
-    self.current_frame_index = (self.current_frame.index + 1) % self.command_buffers.len;
+    self.current_frame_index = (self.current_frame_index + 1) % self.command_buffers.len;
 
-    const fence = self.fences[self.current_frame.index];
-    try self.gc.device.waitForFences(1, &fence, true, std.math.maxInt(usize));
-    try self.gc.device.resetFences(1, &fence);
+    std.debug.print("resetting command buffer {d}\n", .{self.current_frame_index});
 
-    const buffer = self.command_buffers[self.current_frame.index];
+    const fence = self.fences[self.current_frame_index];
+    const buffer = self.command_buffers[self.current_frame_index];
+
+    _ = try self.gc.device.waitForFences(1, @ptrCast(&fence), vk.TRUE, std.math.maxInt(u32));
+    try self.gc.device.resetFences(1, @ptrCast(&fence));
+
     try self.gc.device.resetCommandBuffer(buffer, .{
         .release_resources_bit = true,
     });
+
+    const delete_queue = &self.delete_queues[self.current_frame_index];
+    while (delete_queue.popOrNull()) |item| {
+        switch (item) {
+            .buffer => |handle| {
+                self.gc.destroyBuffer(handle);
+            },
+            .texture => |handle| {
+                self.gc.destroyTexture(handle);
+            },
+        }
+    }
+    self.tracker.reset();
+    try self.gc.device.beginCommandBuffer(buffer, &vk.CommandBufferBeginInfo{
+        .flags = .{
+            .one_time_submit_bit = true,
+        },
+    });
+}
+
+/// submits the current command buffer to the graphics queue, does not BLOCK!!
+// pub fn submit(self: *Self) !void {
+//     const buffer = self.command_buffers[self.current_frame_index];
+//     try self.gc.device.endCommandBuffer(buffer);
+
+//     const fence = self.fences[self.current_frame_index];
+//     try self.gc.device.queueSubmit(self.gc.graphics_queue.queue, 1, @ptrCast(&vk.SubmitInfo{
+//         .command_buffer_count = 1,
+//         .p_command_buffers = @ptrCast(&buffer),
+//     }), fence);
+// }
+
+/// submits the current command buffer to the graphics queue, BLOCKS until the command buffer is done executing
+// pub fn submitBlocking(self: *Self) !void {
+//     _ = self.submit();
+//     const fence = self.fences[self.current_frame_index];
+//     _ = try self.gc.device.waitForFences(1, @ptrCast(&fence), vk.TRUE, std.math.maxInt(usize));
+//     self.reset();
+// }
+
+pub fn submitAndPresent(self: *Self, swapchain: *Gc.Swapchain) !Gc.Swapchain.PresentState {
+    try self.gc.device.endCommandBuffer(self.getCommandBuffer());
+
+    return try swapchain.present(self.getCommandBuffer(), self.fences[self.current_frame_index]);
 }
 
 const GraphicsPass = struct {
     encoder: *Self,
     desc: GraphicsPassDesc,
+    vertex_buffer_count: u32 = 0,
 
     pub fn setScissor(self: *GraphicsPass, scissor: vk.Rect2D) void {
         self.auto.bind_scissor = false;
@@ -110,7 +244,7 @@ const GraphicsPass = struct {
         );
     }
 
-    pub fn bindDescriptorSets(self: *GraphicsPass, first_set: u32, sets: []const vk.DescriptorSet) void {
+    pub fn setDescriptorSets(self: *GraphicsPass, first_set: u32, sets: []const vk.DescriptorSet) void {
         self.auto.bind_descriptors = false;
         self.encoder.gc.device.cmdBindDescriptorSets(
             self.encoder.getCommandBuffer(),
@@ -121,6 +255,52 @@ const GraphicsPass = struct {
             sets.ptr,
             0,
             null,
+        );
+    }
+
+    pub fn setVertexBuffer(self: *GraphicsPass, buffer: Gc.BufferHandle) void {
+        const vk_handle = self.encoder.gc.buffers.getField(buffer, .buffer).?;
+        self.encoder.gc.device.cmdBindVertexBuffers(
+            self.encoder.getCommandBuffer(),
+            self.vertex_buffer_count,
+            1,
+            @ptrCast(&vk_handle),
+            &.{0},
+        );
+        self.vertex_buffer_count += 1;
+    }
+
+    const DrawInfo = struct {
+        vertex_count: u32,
+        instance_count: u32 = 1,
+        first_vertex: u32 = 0,
+        first_instance: u32 = 0,
+    };
+    pub fn draw(self: *GraphicsPass, info: DrawInfo) void {
+        self.encoder.gc.device.cmdDraw(
+            self.encoder.getCommandBuffer(),
+            info.vertex_count,
+            info.instance_count,
+            info.first_vertex,
+            info.first_instance,
+        );
+    }
+
+    const DrawIndexedInfo = struct {
+        index_count: u32,
+        instance_count: u32 = 1,
+        first_index: u32 = 0,
+        vertex_offset: i32 = 0,
+        first_instance: u32 = 0,
+    };
+    pub fn drawIndexed(self: *GraphicsPass, info: DrawIndexedInfo) void {
+        self.encoder.gc.device.cmdDrawIndexed(
+            self.encoder.getCommandBuffer(),
+            info.index_count,
+            info.instance_count,
+            info.first_index,
+            info.vertex_offset,
+            info.first_instance,
         );
     }
 };
@@ -145,7 +325,7 @@ pub const GraphicsPassDesc = struct {
     pipeline: Gc.GraphicsPipelineHandle,
     color_attachments: []const ColorAttachment,
     depth_attachment: ?DepthAttachment,
-    auto: Auto = {},
+    auto: Auto = .{},
 };
 pub fn startGraphicsPass(self: *Self, desc: GraphicsPassDesc) !GraphicsPass {
     const pipeline: Gc.GraphicsPipeline = self.gc.graphics_pipelines.get(desc.pipeline).?;
@@ -181,7 +361,7 @@ pub fn startGraphicsPass(self: *Self, desc: GraphicsPassDesc) !GraphicsPass {
     var maybe_depth_attachment: ?vk.RenderingAttachmentInfoKHR = null;
     if (desc.depth_attachment) |depth_attachment| {
         const texture = self.gc.textures.get(depth_attachment.handle).?;
-        maybe_depth_attachment = &vk.RenderingAttachmentInfoKHR{
+        maybe_depth_attachment = vk.RenderingAttachmentInfoKHR{
             .image_view = texture.view,
             .image_layout = vk.ImageLayout.depth_stencil_attachment_optimal,
             .load_op = depth_attachment.load_op,
@@ -245,6 +425,155 @@ pub fn startGraphicsPass(self: *Self, desc: GraphicsPassDesc) !GraphicsPass {
     };
 }
 
-pub fn endGraphicsPass(self: *GraphicsPass) void {
-    self.encoder.gc.device.cmdEndRendering(self.encoder.getCommandBuffer());
+pub fn endGraphicsPass(self: *Self, pass: GraphicsPass) void {
+    _ = pass; // autofix
+    self.gc.device.cmdEndRendering(self.getCommandBuffer());
+}
+
+fn queueDestroyBuffer(self: *Self, index: Gc.BufferPool.Index) void {
+    self.delete_queues[self.current_frame_index].append(self.gc.allocator, .{
+        .buffer = index,
+    }) catch unreachable;
+}
+
+pub fn writeBuffer(self: *Self, buffer: Gc.BufferHandle, data: []const u8) !void {
+    var staging_buffer = try Gc.Buffer.create(self.gc, .{
+        .location = .auto,
+        .usage = vk.BufferUsageFlags{
+            .transfer_src_bit = true,
+        },
+        .size = data.len,
+        .name = "staging buffer",
+    });
+    staging_buffer.setData(self.gc, data.ptr, data.len);
+
+    // var desc = create_desc;
+    // desc.usage.transfer_dst_bit = true;
+    // if (desc.size == 0) {
+    //     desc.size = copy_info.data_len;
+    // }
+
+    // const buffer = try Buffer.create(self, desc);
+    const region = vk.BufferCopy{
+        .src_offset = 0,
+        .dst_offset = 0,
+        .size = data.len,
+    };
+
+    const vk_buffer = self.gc.buffers.getField(buffer, .buffer).?;
+    self.gc.device.cmdCopyBuffer(self.getCommandBuffer(), staging_buffer.buffer, vk_buffer, 1, @ptrCast(&region));
+
+    const staging = try self.gc.buffers.append(self.gc.allocator, staging_buffer);
+    self.queueDestroyBuffer(staging);
+}
+
+const CreateImageBarrierInfo = struct {
+    new_stage_mask: vk.PipelineStageFlags2 = .{},
+    new_access_mask: vk.AccessFlags2 = .{},
+    new_layout: vk.ImageLayout,
+    queue_family_index: u32 = vk.QUEUE_FAMILY_IGNORED,
+};
+pub fn imageBarrier(self: *Self, image: Gc.TextureHandle, info: CreateImageBarrierInfo) void {
+    const current_status = self.tracker.getTexture(image);
+    const texture = self.gc.textures.get(image).?;
+    const barrier = vk.ImageMemoryBarrier2{
+        .image = texture.image,
+        .subresource_range = texture.getResourceRange(),
+        .src_stage_mask = current_status.current_stage,
+        .dst_stage_mask = info.new_stage_mask,
+        .src_access_mask = current_status.current_access,
+        .dst_access_mask = info.new_access_mask,
+        .old_layout = current_status.current_layout,
+        .new_layout = info.new_layout,
+        .src_queue_family_index = current_status.current_queue_family,
+        .dst_queue_family_index = info.queue_family_index,
+    };
+    self.gc.device.cmdPipelineBarrier2(self.getCommandBuffer(), &.{
+        .image_memory_barrier_count = 1,
+        .p_image_memory_barriers = @ptrCast(&barrier),
+    });
+    current_status.* = .{
+        .current_layout = info.new_layout,
+        .current_access = info.new_access_mask,
+        .current_stage = info.new_stage_mask,
+        .current_queue_family = info.queue_family_index,
+    };
+}
+
+pub fn blitToSurface(self: *Self, swapchain: *Gc.Swapchain, color_attachment: Gc.TextureHandle) void {
+    // barrier for swapchain
+    const barrier = vk.ImageMemoryBarrier2{
+        .image = swapchain.currentImage(),
+        .subresource_range = .{
+            .aspect_mask = .{ .color_bit = true },
+            .base_mip_level = 0,
+            .level_count = 1,
+            .base_array_layer = 0,
+            .layer_count = 1,
+        },
+        .src_stage_mask = .{},
+        .dst_stage_mask = .{
+            .blit_bit = true,
+        },
+        .old_layout = .undefined,
+        .new_layout = .transfer_dst_optimal,
+        .src_access_mask = .{},
+        .dst_access_mask = .{ .transfer_write_bit = true },
+        .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+        .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
+    };
+
+    self.gc.device.cmdPipelineBarrier2(self.getCommandBuffer(), &.{
+        .image_memory_barrier_count = 1,
+        .p_image_memory_barriers = @ptrCast(&barrier),
+    });
+
+    const src = self.gc.textures.get(color_attachment).?;
+    const dst = swapchain.currentImage();
+    self.gc.device.cmdBlitImage2(self.getCommandBuffer(), @ptrCast(&vk.BlitImageInfo2{
+        .dst_image = dst,
+        .dst_image_layout = .transfer_dst_optimal,
+        .src_image = src.image,
+        .src_image_layout = .transfer_src_optimal,
+        .filter = .linear,
+        .region_count = 1,
+        .p_regions = @ptrCast(&vk.ImageBlit2{
+            .src_subresource = .{
+                .aspect_mask = .{ .color_bit = true },
+                .mip_level = 0,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+            .dst_subresource = .{
+                .aspect_mask = .{ .color_bit = true },
+                .mip_level = 0,
+                .base_array_layer = 0,
+                .layer_count = 1,
+            },
+            .src_offsets = .{
+                vk.Offset3D{
+                    .x = 0,
+                    .y = 0,
+                    .z = 0,
+                },
+                vk.Offset3D{
+                    .x = @intCast(src.dimensions.width),
+                    .y = @intCast(src.dimensions.height),
+                    .z = 1,
+                },
+            },
+            .dst_offsets = .{
+                vk.Offset3D{
+                    .x = 0,
+                    .y = 0,
+                    .z = 0,
+                },
+                vk.Offset3D{
+                    .x = @intCast(swapchain.extent.width),
+                    .y = @intCast(swapchain.extent.height),
+                    .z = 1,
+                },
+            },
+        }),
+    }));
 }

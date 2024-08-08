@@ -4,7 +4,10 @@ pub const vk = @import("vk.zig");
 
 pub const Swapchain = @import("swapchain.zig");
 pub const Shader = @import("shader.zig");
+pub const Texture = @import("texture.zig");
+pub const Buffer = @import("buffer.zig");
 pub const GraphicsPipeline = @import("graphics_pipeline.zig");
+pub const CommandEncoder = @import("command_encoder.zig");
 const MultiArenaUnmanaged = @import("generational-arena").MultiArenaUnmanaged;
 
 const std = @import("std");
@@ -68,8 +71,14 @@ const Self = @This();
 pub const ShaderPool = MultiArenaUnmanaged(Shader, u16, u16);
 pub const ShaderHandle = ShaderPool.Index;
 
-pub const GraphicsPipelinePool = MultiArenaUnmanaged(GraphicsPipeline, u8, u8);
+pub const GraphicsPipelinePool = MultiArenaUnmanaged(GraphicsPipeline, u4, u4);
 pub const GraphicsPipelineHandle = GraphicsPipelinePool.Index;
+
+pub const TexturePool = MultiArenaUnmanaged(Texture, u16, u16);
+pub const TextureHandle = TexturePool.Index;
+
+pub const BufferPool = MultiArenaUnmanaged(Buffer, u16, u16);
+pub const BufferHandle = BufferPool.Index;
 
 pub const PrependDescriptorSet = struct { layout: vk.DescriptorSetLayout, set: vk.DescriptorSet };
 
@@ -90,6 +99,8 @@ debug_messenger: vk.DebugUtilsMessengerEXT,
 vma: c.VmaAllocator,
 shaders: ShaderPool = .{},
 graphics_pipelines: GraphicsPipelinePool = .{},
+textures: TexturePool = .{},
+buffers: BufferPool = .{},
 
 pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: *c.GLFWwindow) !Self {
     var instance_extensions = std.ArrayList([*c]const u8).init(allocator);
@@ -163,7 +174,7 @@ pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: *c.GLFWwindow
             .vkGetInstanceProcAddr = @ptrCast(base.dispatch.vkGetInstanceProcAddr),
             .vkGetDeviceProcAddr = @ptrCast(instance.wrapper.dispatch.vkGetDeviceProcAddr),
         },
-        .flags = c.VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT | c.VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT | c.VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT,
+        .flags = c.VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT | c.VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT,
         .vulkanApiVersion = c.VK_API_VERSION_1_3,
     }, &vma) != c.VK_SUCCESS) {
         return error.VmaInitFailed;
@@ -233,4 +244,91 @@ pub fn createShader(self: *Self, create: Shader.CreateInfo) !ShaderPool.Index {
 pub fn createGraphicsPipeline(self: *Self, create: GraphicsPipeline.CreateInfo) !GraphicsPipelinePool.Index {
     const pipeline = try GraphicsPipeline.create(self, create);
     return try self.graphics_pipelines.append(self.allocator, pipeline);
+}
+
+pub fn createTexture(self: *Self, create: Texture.CreateInfo) !TexturePool.Index {
+    const tex = try Texture.create(self, create);
+    return try self.textures.append(self.allocator, tex);
+}
+
+pub fn destroyTexture(self: *Self, texture: TexturePool.Index) void {
+    var inner = self.textures.remove(texture).?;
+    inner.destroy(self);
+}
+
+pub fn createColorAttachment(self: *Self, swapchain: *const Swapchain, format: ?vk.Format) !TexturePool.Index {
+    const tex = try Texture.create(self, .{
+        .dedicated = true,
+        .dimensions = .{
+            .width = swapchain.extent.width,
+            .height = swapchain.extent.height,
+            .depth = 1,
+        },
+        .format = format orelse swapchain.surface_format.format,
+        .name = "color_attachment",
+        .usage = vk.ImageUsageFlags{
+            .color_attachment_bit = true,
+            .transfer_src_bit = true,
+        },
+    });
+    return try self.textures.append(self.allocator, tex);
+}
+
+pub fn createBuffer(self: *Self, create: Buffer.CreateInfo) !BufferPool.Index {
+    const buf = try Buffer.create(self, create);
+    return try self.buffers.append(self.allocator, buf);
+}
+
+pub fn destroyBuffer(self: *Self, buffer: BufferPool.Index) void {
+    var inner = self.buffers.remove(buffer).?;
+    inner.destroy(self);
+}
+
+pub const BufferCopyInfo = struct {
+    data: ?*const anyopaque,
+    data_len: usize,
+    dst_offset: usize = 0,
+    command_buffer: ?vk.CommandBuffer = null,
+};
+
+pub fn createBufferWithCopy(self: *Self, create_desc: Buffer.CreateInfo, copy_info: BufferCopyInfo) !BufferPool.Index {
+    var staging_buffer = try Buffer.create(self, .{
+        .location = .auto,
+        .usage = vk.BufferUsageFlags{
+            .transfer_src_bit = true,
+        },
+        .size = copy_info.data_len,
+        .name = "staging buffer",
+    });
+    staging_buffer.setData(self, copy_info.data, copy_info.data_len);
+
+    var desc = create_desc;
+    desc.usage.transfer_dst_bit = true;
+    if (desc.size == 0) {
+        desc.size = copy_info.data_len;
+    }
+
+    const buffer = try Buffer.create(self, desc);
+    const region = vk.BufferCopy{
+        .src_offset = 0,
+        .dst_offset = copy_info.dst_offset,
+        .size = copy_info.data_len,
+    };
+
+    var command_buffer: vk.CommandBuffer = self.transfer_command_buffer;
+    if (copy_info.command_buffer) |cmdbuf| {
+        command_buffer = cmdbuf;
+        self.device.cmdCopyBuffer(command_buffer, staging_buffer.buffer, buffer.buffer, 1, @ptrCast(&region));
+
+        const staging = try self.buffers.append(self.allocator, staging_buffer);
+        self.queueDestroyBuffer(staging);
+    } else {
+        try self.startTransfer();
+        self.device.cmdCopyBuffer(command_buffer, staging_buffer.buffer, buffer.buffer, 1, @ptrCast(&region));
+        try self.submitTransfer();
+
+        staging_buffer.destroy(self);
+    }
+
+    return try self.buffers.append(self.allocator, buffer);
 }

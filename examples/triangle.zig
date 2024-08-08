@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @import("gila").c;
 const slang = @import("gila").slang;
 const Gc = @import("gila");
+const CommandEncoder = @import("gila").CommandEncoder;
 
 fn errorCallback(err: c_int, desc: [*c]const u8) callconv(.C) void {
     _ = err; // autofix
@@ -11,6 +12,21 @@ fn errorCallback(err: c_int, desc: [*c]const u8) callconv(.C) void {
 pub const Vertex = packed struct {
     position: @Vector(2, f32),
     color: @Vector(3, f32),
+};
+
+const Triangle = [_]Vertex{
+    Vertex{
+        .position = .{ -0.5, -0.5 },
+        .color = .{ 1, 0, 0 },
+    },
+    Vertex{
+        .position = .{ 0.5, -0.5 },
+        .color = .{ 0, 1, 0 },
+    },
+    Vertex{
+        .position = .{ 0, 0.5 },
+        .color = .{ 0, 0, 1 },
+    },
 };
 
 pub fn main() !void {
@@ -43,7 +59,7 @@ pub fn main() !void {
         .width = 1280,
         .height = 720,
     };
-    const window = c.glfwCreateWindow(extent.width, extent.height, "Hello, mach-glfw!", null, null);
+    const window = c.glfwCreateWindow(extent.width, extent.height, "gila", null, null);
     defer c.glfwDestroyWindow(window);
 
     if (c.glfwVulkanSupported() == 0) {
@@ -51,8 +67,7 @@ pub fn main() !void {
     }
 
     var gc = try Gc.init(std.heap.c_allocator, "gila", window.?);
-    const swapchain = try Gc.Swapchain.init(&gc, extent);
-    _ = swapchain; // autofix
+    var swapchain = try Gc.Swapchain.init(&gc, extent);
 
     const vertex_shader = try gc.createShader(.{
         .data = .{ .path = "./raster.slang" },
@@ -87,13 +102,23 @@ pub fn main() !void {
         .fragment = .{
             .shader = fragment_shader,
             .color_targets = &.{
-                // Gc.GraphicsPipeline.ColorAttachment{
-                //     .format = .
-                // },
+                Gc.GraphicsPipeline.ColorAttachment{
+                    .format = .r8g8b8a8_srgb,
+                },
             },
         },
     });
-    _ = pipeline; // autofix
+
+    const texture = try gc.createColorAttachment(&swapchain, .r8g8b8a8_srgb);
+    const vertex_buffer = try gc.createBuffer(.{
+        .size = @sizeOf(Vertex) * 3,
+        .usage = .{ .vertex_buffer_bit = true, .transfer_dst_bit = true },
+        .name = "vertex_buffer",
+    });
+
+    var encoder = try CommandEncoder.init(&gc, .{
+        .max_inflight = swapchain.swap_images.len,
+    });
 
     while (c.glfwWindowShouldClose(window) == 0) {
         var w: c_int = undefined;
@@ -106,6 +131,56 @@ pub fn main() !void {
             continue;
         }
 
+        try encoder.reset();
+        try encoder.writeBuffer(vertex_buffer, std.mem.sliceAsBytes(&Triangle));
+
+        {
+            encoder.imageBarrier(texture, .{
+                .new_access_mask = .{ .color_attachment_write_bit = true },
+                .new_stage_mask = .{ .color_attachment_output_bit = true },
+                .new_layout = .color_attachment_optimal,
+            });
+
+            var pass = try encoder.startGraphicsPass(.{
+                .pipeline = pipeline,
+                .color_attachments = &.{
+                    CommandEncoder.GraphicsPassDesc.ColorAttachment{
+                        .handle = texture,
+                        .clear_color = .{ .float_32 = .{ 0, 0, 0, 1.0 } },
+                        .load_op = .clear,
+                        .store_op = .store,
+                    },
+                },
+                .depth_attachment = null,
+            });
+            defer encoder.endGraphicsPass(pass);
+
+            pass.setVertexBuffer(vertex_buffer);
+            pass.draw(.{
+                .vertex_count = 3,
+            });
+        }
+
+        encoder.imageBarrier(texture, .{
+            .new_access_mask = .{ .transfer_read_bit = true },
+            .new_stage_mask = .{ .blit_bit = true },
+            .new_layout = .transfer_src_optimal,
+        });
+        encoder.blitToSurface(&swapchain, texture);
+
+        const state = try encoder.submitAndPresent(&swapchain);
+        if (state == .suboptimal or swapchain.extent.width != @as(u32, @intCast(w)) or swapchain.extent.height != @as(u32, @intCast(h))) {
+            std.debug.print("is suboptiaml\n", .{});
+            // try swapchain.recreate(.{
+            //     .width = @intCast(w),
+            //     .height = @intCast(h),
+            // });
+        }
+
         c.glfwPollEvents();
+
+        // if (encoder.current_frame_index == 1) {
+        //     break;
+        // }
     }
 }
