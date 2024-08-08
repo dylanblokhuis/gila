@@ -124,52 +124,17 @@ pub fn currentSwapImage(self: Self) *const SwapImage {
     return &self.swap_images[self.image_index];
 }
 
+/// assumes the command buffer is already been ended
 pub fn present(self: *Self, cmdbuf: vk.CommandBuffer, fence: vk.Fence) !PresentState {
-    const barrier = vk.ImageMemoryBarrier2{
-        .image = self.currentImage(),
-        .subresource_range = .{
-            .aspect_mask = .{ .color_bit = true },
-            .base_mip_level = 0,
-            .level_count = 1,
-            .base_array_layer = 0,
-            .layer_count = 1,
-        },
-        .src_stage_mask = .{
-            .blit_bit = true,
-        },
-        .dst_stage_mask = .{
-            // .all_commands_bit = true,
-        },
-        .old_layout = .transfer_dst_optimal,
-        .new_layout = .present_src_khr,
-        .src_access_mask = .{
-            // .memory_read_bit = true,
-            // .memory_write_bit = true,
-        },
-        .dst_access_mask = .{
-            // .memory_read_bit = true,
-            // .memory_write_bit = true,
-        },
-        // .src_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
-        // .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
-        .src_queue_family_index = self.gc.graphics_queue.family,
-        .dst_queue_family_index = self.gc.graphics_queue.family,
-    };
-
-    self.gc.device.cmdPipelineBarrier2(cmdbuf, &.{
-        .image_memory_barrier_count = 1,
-        .p_image_memory_barriers = @ptrCast(&barrier),
-    });
-
     const current = self.currentSwapImage();
     _ = try self.gc.device.waitForFences(1, @ptrCast(&current.frame_fence), vk.TRUE, std.math.maxInt(u64));
     try self.gc.device.resetFences(1, @ptrCast(&current.frame_fence));
 
     const acquire_complete_info = vk.SemaphoreSubmitInfo{
         .semaphore = current.image_acquired,
-        .stage_mask = .{ .color_attachment_output_bit = true },
+        .stage_mask = .{ .top_of_pipe_bit = true },
         .device_index = 0,
-        .value = 0, // noop
+        .value = 1, // noop
     };
     const commend_buffer_info = vk.CommandBufferSubmitInfo{
         .command_buffer = cmdbuf,
@@ -177,9 +142,9 @@ pub fn present(self: *Self, cmdbuf: vk.CommandBuffer, fence: vk.Fence) !PresentS
     };
     const rendering_complete_info = vk.SemaphoreSubmitInfo{
         .semaphore = current.render_finished,
-        .stage_mask = .{ .color_attachment_output_bit = true },
+        .stage_mask = .{ .bottom_of_pipe_bit = true },
         .device_index = 0,
-        .value = 0, // noop
+        .value = 2, // noop
     };
 
     try self.gc.device.queueSubmit2(self.gc.graphics_queue.handle, 1, &[_]vk.SubmitInfo2{vk.SubmitInfo2{

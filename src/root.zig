@@ -34,8 +34,6 @@ const apis: []const vk.ApiInfo = &.{
     vk.features.version_1_3,
     vk.extensions.khr_surface,
     vk.extensions.khr_swapchain,
-    // vk.extensions.khr_synchronization_2,
-    // vk.extensions.khr_dynamic_rendering,
     vk.extensions.ext_debug_utils,
 };
 pub const required_device_extensions = [_][*:0]const u8{

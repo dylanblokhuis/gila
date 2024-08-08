@@ -111,13 +111,14 @@ pub fn main() !void {
 
     const texture = try gc.createColorAttachment(&swapchain, .r8g8b8a8_srgb);
     const vertex_buffer = try gc.createBuffer(.{
+        .location = .gpu_only,
         .size = @sizeOf(Vertex) * 3,
         .usage = .{ .vertex_buffer_bit = true, .transfer_dst_bit = true },
         .name = "vertex_buffer",
     });
 
     var encoder = try CommandEncoder.init(&gc, .{
-        .max_inflight = swapchain.swap_images.len,
+        .max_inflight = 2,
     });
 
     while (c.glfwWindowShouldClose(window) == 0) {
@@ -132,7 +133,16 @@ pub fn main() !void {
         }
 
         try encoder.reset();
+
+        encoder.bufferBarrier(vertex_buffer, .{
+            .new_access_mask = .{ .transfer_write_bit = true },
+            .new_stage_mask = .{ .all_transfer_bit = true },
+        });
         try encoder.writeBuffer(vertex_buffer, std.mem.sliceAsBytes(&Triangle));
+        encoder.bufferBarrier(vertex_buffer, .{
+            .new_access_mask = .{ .vertex_attribute_read_bit = true },
+            .new_stage_mask = .{ .vertex_attribute_input_bit = true },
+        });
 
         {
             encoder.imageBarrier(texture, .{
@@ -163,24 +173,20 @@ pub fn main() !void {
 
         encoder.imageBarrier(texture, .{
             .new_access_mask = .{ .transfer_read_bit = true },
-            .new_stage_mask = .{ .blit_bit = true },
+            .new_stage_mask = .{ .all_transfer_bit = true },
             .new_layout = .transfer_src_optimal,
         });
         encoder.blitToSurface(&swapchain, texture);
 
+        // try encoder.submit();
         const state = try encoder.submitAndPresent(&swapchain);
         if (state == .suboptimal or swapchain.extent.width != @as(u32, @intCast(w)) or swapchain.extent.height != @as(u32, @intCast(h))) {
-            std.debug.print("is suboptiaml\n", .{});
-            // try swapchain.recreate(.{
-            //     .width = @intCast(w),
-            //     .height = @intCast(h),
-            // });
+            try swapchain.recreate(.{
+                .width = @intCast(w),
+                .height = @intCast(h),
+            });
         }
 
         c.glfwPollEvents();
-
-        // if (encoder.current_frame_index == 1) {
-        //     break;
-        // }
     }
 }
