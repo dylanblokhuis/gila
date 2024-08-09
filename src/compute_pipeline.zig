@@ -71,18 +71,3 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
 pub fn destroy(self: *Self, gc: *Gc) void {
     gc.device.destroyPipeline(self.pipeline, null);
 }
-
-// pub fn getDescriptorSetsCombined(self: *const Self, gc: *Gc) ![]vk.DescriptorSet {
-//     if (self.prepend_descriptor_sets) |prepend| {
-//         var sets = try gc.allocator.alloc(vk.DescriptorSet, prepend.len + self.sets.len);
-//         for (prepend, 0..) |set, i| {
-//             sets[i] = set.set;
-//         }
-//         for (self.sets, 0..) |set, i| {
-//             sets[prepend.len + i] = set;
-//         }
-//         return sets;
-//     } else {
-//         return self.sets;
-//     }
-// }

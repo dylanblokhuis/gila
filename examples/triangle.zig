@@ -136,7 +136,6 @@ pub fn main() !void {
         try encoder.submitBlocking();
     }
 
-    var frame_index: u32 = 0;
     while (c.glfwWindowShouldClose(window) == 0) {
         var w: c_int = undefined;
         var h: c_int = undefined;
@@ -149,7 +148,6 @@ pub fn main() !void {
         }
 
         try encoder.reset();
-        frame_index += 1;
         // make a triangle
         // {
         //     encoder.imageBarrier(texture, .{
@@ -183,9 +181,7 @@ pub fn main() !void {
             var pass = try encoder.startComputePass(.{
                 .pipeline = compute_pipeline,
             });
-            pass.bindDescriptorSets(0, &.{
-                encoder.getBindlessDescriptorSet(),
-            });
+            pass.bindDescriptorSets(0, &.{encoder.getBindlessDescriptorSet()});
             encoder.imageBarrier(storage_texture, .{
                 .new_access_mask = .{ .shader_storage_write_bit = true },
                 .new_layout = .general,
@@ -195,7 +191,7 @@ pub fn main() !void {
                 frame_index: u32,
                 _padding: @Vector(3, u32) = undefined,
             }{
-                .frame_index = frame_index,
+                .frame_index = 0,
             }), 0);
             pass.dispatch(swapchain.extent.width / 8, swapchain.extent.height / 8, 1);
             encoder.imageBarrier(storage_texture, .{

@@ -481,44 +481,18 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
         return std.debug.panic("failed to create graphics pipeline: {}", .{result});
     }
 
-    // const owned_prepend: ?[]Gc.PrependDescriptorSet = if (desc.prepend_descriptor_sets) |prepend| blk: {
-    //     const sets = try gc.allocator.alloc(Gc.PrependDescriptorSet, prepend.len);
-    //     for (prepend, 0..) |set, i| {
-    //         sets[i] = set;
-    //     }
-    //     break :blk sets;
-    // } else blk: {
-    //     break :blk null;
-    // };
-
     return Self{
         .pipeline = pipeline,
         .layout = pipeline_layout,
         .sets = reflect.sets,
         .pool = reflect.pool,
         .first_set = first_set,
-        // .prepend_descriptor_sets = owned_prepend,
     };
 }
 
 pub fn destroy(self: *Self, gc: *Gc) void {
     gc.device.destroyPipeline(self.pipeline, null);
 }
-
-// pub fn getDescriptorSetsCombined(self: *const Self, gc: *Gc) ![]vk.DescriptorSet {
-//     if (self.prepend_descriptor_sets) |prepend| {
-//         var sets = try gc.allocator.alloc(vk.DescriptorSet, prepend.len + self.sets.len);
-//         for (prepend, 0..) |set, i| {
-//             sets[i] = set.set;
-//         }
-//         for (self.sets, 0..) |set, i| {
-//             sets[prepend.len + i] = set;
-//         }
-//         return sets;
-//     } else {
-//         return self.sets;
-//     }
-// }
 
 // const UpdateDescriptor = union(enum) {
 //     buffer: Gc.BufferHandle,

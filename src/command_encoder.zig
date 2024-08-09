@@ -174,7 +174,7 @@ pub fn reset(self: *Self) !void {
     const arena = &self.arenas[self.current_frame_index];
     _ = arena.reset(.retain_capacity);
 
-    try self.updateDescriptorSet();
+    try self.bindless.updateDescriptorSet(self.gc, self.getBindlessDescriptorSet(), self.getArena());
 
     try self.gc.device.beginCommandBuffer(buffer, &vk.CommandBufferBeginInfo{
         .flags = .{
@@ -620,6 +620,7 @@ const Bindless = struct {
             }
         }
     };
+    const BINDING_COUNT: comptime_int = std.meta.fields(DescriptorTypes).len;
 
     pub const BoundDescriptor = union(DescriptorTypes) {
         sampler: vk.Sampler,
@@ -628,7 +629,6 @@ const Bindless = struct {
         sampled_image: Gc.TextureHandle,
         storage_image: Gc.TextureHandle,
     };
-    const BINDING_COUNT: comptime_int = 5;
 
     set_layout: vk.DescriptorSetLayout,
     pools: []vk.DescriptorPool,
@@ -715,14 +715,8 @@ const Bindless = struct {
             // },
         };
 
-        std.debug.assert(pool_sizes.len == bindings.len);
-        for (0..pool_sizes.len) |i| {
-            std.debug.assert(pool_sizes[i].type == bindings[i].descriptor_type);
-            std.debug.assert(pool_sizes[i].descriptor_count == bindings[i].descriptor_count);
-        }
-
         const binding_flags = vk.DescriptorSetLayoutBindingFlagsCreateInfo{
-            .p_binding_flags = &[_]vk.DescriptorBindingFlags{
+            .p_binding_flags = &[BINDING_COUNT]vk.DescriptorBindingFlags{
                 vk.DescriptorBindingFlags{ .partially_bound_bit = true },
                 vk.DescriptorBindingFlags{ .partially_bound_bit = true },
                 vk.DescriptorBindingFlags{ .partially_bound_bit = true },
@@ -730,6 +724,12 @@ const Bindless = struct {
                 vk.DescriptorBindingFlags{ .partially_bound_bit = true },
             },
         };
+
+        std.debug.assert(pool_sizes.len == bindings.len);
+        for (0..pool_sizes.len) |i| {
+            std.debug.assert(pool_sizes[i].type == bindings[i].descriptor_type);
+            std.debug.assert(pool_sizes[i].descriptor_count == bindings[i].descriptor_count);
+        }
 
         const set_layout = try gc.device.createDescriptorSetLayout(&.{
             .binding_count = bindings.len,
@@ -762,6 +762,75 @@ const Bindless = struct {
             .bound_descriptors = std.ArrayList(BoundDescriptor).init(gc.allocator),
         };
     }
+
+    pub fn updateDescriptorSet(self: *Bindless, gc: *Gc, set: vk.DescriptorSet, arena: std.mem.Allocator) !void {
+        var writes = std.ArrayList(vk.WriteDescriptorSet).init(arena);
+
+        for (self.bound_descriptors.items) |desc| {
+            const enu = std.meta.activeTag(desc);
+
+            // const enu = desc.
+            const index = switch (desc) {
+                .sampler => unreachable,
+                .uniform_buffer => |h| h.index,
+                .storage_buffer => |h| h.index,
+                .sampled_image => |h| h.index,
+                .storage_image => |h| h.index,
+            };
+
+            var image_info = std.ArrayList(vk.DescriptorImageInfo).init(arena);
+            var buffer_info = std.ArrayList(vk.DescriptorBufferInfo).init(arena);
+
+            switch (desc) {
+                .sampler => unreachable,
+                .sampled_image => |handle| {
+                    const texture = gc.textures.get(handle).?;
+                    try image_info.append(vk.DescriptorImageInfo{
+                        .sampler = .null_handle,
+                        .image_view = texture.view,
+                        .image_layout = vk.ImageLayout.shader_read_only_optimal,
+                    });
+                },
+                .storage_image => |handle| {
+                    const texture = gc.textures.get(handle).?;
+                    try image_info.append(vk.DescriptorImageInfo{
+                        .sampler = .null_handle,
+                        .image_view = texture.view,
+                        .image_layout = vk.ImageLayout.general,
+                    });
+                },
+                .uniform_buffer => |handle| {
+                    const buffer = gc.buffers.get(handle).?;
+                    try buffer_info.append(vk.DescriptorBufferInfo{
+                        .buffer = buffer.buffer,
+                        .offset = 0,
+                        .range = vk.WHOLE_SIZE,
+                    });
+                },
+                .storage_buffer => |handle| {
+                    const buffer = gc.buffers.get(handle).?;
+                    try buffer_info.append(vk.DescriptorBufferInfo{
+                        .buffer = buffer.buffer,
+                        .offset = 0,
+                        .range = vk.WHOLE_SIZE,
+                    });
+                },
+            }
+
+            try writes.append(vk.WriteDescriptorSet{
+                .dst_set = set,
+                .dst_binding = @intFromEnum(desc),
+                .dst_array_element = index,
+                .descriptor_type = enu.toDescriptorType(),
+                .descriptor_count = 1,
+                .p_image_info = image_info.items.ptr,
+                .p_buffer_info = buffer_info.items.ptr,
+                .p_texel_buffer_view = &[0]vk.BufferView{},
+            });
+        }
+
+        gc.device.updateDescriptorSets(@intCast(writes.items.len), writes.items.ptr, 0, null);
+    }
 };
 
 pub fn addToBindless(self: *Self, desc: Bindless.BoundDescriptor) !void {
@@ -773,75 +842,6 @@ pub fn getBindlessDescriptorSet(self: *Self) vk.DescriptorSet {
 }
 pub fn getBindlessDescriptorSetLayout(self: *Self) vk.DescriptorSetLayout {
     return self.bindless.set_layout;
-}
-
-fn updateDescriptorSet(self: *Self) !void {
-    var writes = std.ArrayList(vk.WriteDescriptorSet).init(self.getArena());
-
-    for (self.bindless.bound_descriptors.items) |desc| {
-        const enu = std.meta.activeTag(desc);
-
-        // const enu = desc.
-        const index = switch (desc) {
-            .sampler => unreachable,
-            .uniform_buffer => |h| h.index,
-            .storage_buffer => |h| h.index,
-            .sampled_image => |h| h.index,
-            .storage_image => |h| h.index,
-        };
-
-        var image_info = std.ArrayList(vk.DescriptorImageInfo).init(self.getArena());
-        var buffer_info = std.ArrayList(vk.DescriptorBufferInfo).init(self.getArena());
-
-        switch (desc) {
-            .sampler => unreachable,
-            .sampled_image => |handle| {
-                const texture = self.gc.textures.get(handle).?;
-                try image_info.append(vk.DescriptorImageInfo{
-                    .sampler = .null_handle,
-                    .image_view = texture.view,
-                    .image_layout = vk.ImageLayout.shader_read_only_optimal,
-                });
-            },
-            .storage_image => |handle| {
-                const texture = self.gc.textures.get(handle).?;
-                try image_info.append(vk.DescriptorImageInfo{
-                    .sampler = .null_handle,
-                    .image_view = texture.view,
-                    .image_layout = vk.ImageLayout.general,
-                });
-            },
-            .uniform_buffer => |handle| {
-                const buffer = self.gc.buffers.get(handle).?;
-                try buffer_info.append(vk.DescriptorBufferInfo{
-                    .buffer = buffer.buffer,
-                    .offset = 0,
-                    .range = vk.WHOLE_SIZE,
-                });
-            },
-            .storage_buffer => |handle| {
-                const buffer = self.gc.buffers.get(handle).?;
-                try buffer_info.append(vk.DescriptorBufferInfo{
-                    .buffer = buffer.buffer,
-                    .offset = 0,
-                    .range = vk.WHOLE_SIZE,
-                });
-            },
-        }
-
-        try writes.append(vk.WriteDescriptorSet{
-            .dst_set = self.getBindlessDescriptorSet(),
-            .dst_binding = @intFromEnum(desc),
-            .dst_array_element = index,
-            .descriptor_type = enu.toDescriptorType(),
-            .descriptor_count = 1,
-            .p_image_info = image_info.items.ptr,
-            .p_buffer_info = buffer_info.items.ptr,
-            .p_texel_buffer_view = &[0]vk.BufferView{},
-        });
-    }
-
-    self.gc.device.updateDescriptorSets(@intCast(writes.items.len), writes.items.ptr, 0, null);
 }
 
 //
