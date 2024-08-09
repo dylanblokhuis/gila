@@ -154,7 +154,7 @@ pub fn present(self: *Self, cmdbuf: vk.CommandBuffer, fence: vk.Fence) !PresentS
         .p_command_buffer_infos = @ptrCast(&commend_buffer_info),
         .signal_semaphore_info_count = 1,
         .p_signal_semaphore_infos = @ptrCast(&rendering_complete_info),
-    }}, fence);
+    }}, current.frame_fence);
 
     _ = try self.gc.device.queuePresentKHR(self.gc.present_queue.handle, &.{
         .wait_semaphore_count = 1,
@@ -168,7 +168,7 @@ pub fn present(self: *Self, cmdbuf: vk.CommandBuffer, fence: vk.Fence) !PresentS
         self.handle,
         std.math.maxInt(u64),
         self.next_image_acquired,
-        current.frame_fence,
+        fence,
     );
 
     std.mem.swap(vk.Semaphore, &self.swap_images[result.image_index].image_acquired, &self.next_image_acquired);
@@ -223,6 +223,8 @@ const SwapImage = struct {
     }
 
     fn deinit(self: SwapImage, gc: *Gc) void {
+        _ = gc.device.waitForFences(1, @ptrCast(&self.frame_fence), vk.TRUE, std.math.maxInt(u64)) catch return;
+
         gc.device.destroyImageView(self.view, null);
         gc.device.destroySemaphore(self.image_acquired, null);
         gc.device.destroySemaphore(self.render_finished, null);
