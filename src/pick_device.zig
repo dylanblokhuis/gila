@@ -33,9 +33,35 @@ pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.D
         .shader_storage_image_read_without_format = vk.TRUE,
     };
 
+    var vulkan_1_2_features = vk.PhysicalDeviceVulkan12Features{
+        // features needed for bindless
+        .descriptor_indexing = vk.TRUE,
+        .shader_input_attachment_array_dynamic_indexing = vk.TRUE,
+        .shader_uniform_texel_buffer_array_dynamic_indexing = vk.TRUE,
+        .shader_storage_texel_buffer_array_dynamic_indexing = vk.TRUE,
+        .shader_uniform_buffer_array_non_uniform_indexing = vk.TRUE,
+        .shader_sampled_image_array_non_uniform_indexing = vk.TRUE,
+        .shader_storage_buffer_array_non_uniform_indexing = vk.TRUE,
+        .shader_storage_image_array_non_uniform_indexing = vk.TRUE,
+        .shader_input_attachment_array_non_uniform_indexing = vk.TRUE,
+        .shader_uniform_texel_buffer_array_non_uniform_indexing = vk.TRUE,
+        .shader_storage_texel_buffer_array_non_uniform_indexing = vk.TRUE,
+        // .descriptor_binding_uniform_buffer_update_after_bind = vk.TRUE,
+        // .descriptor_binding_sampled_image_update_after_bind = vk.TRUE,
+        // .descriptor_binding_storage_image_update_after_bind = vk.TRUE,
+        // .descriptor_binding_storage_buffer_update_after_bind = vk.TRUE,
+        // .descriptor_binding_uniform_texel_buffer_update_after_bind = vk.TRUE,
+        // .descriptor_binding_storage_texel_buffer_update_after_bind = vk.TRUE,
+        .descriptor_binding_update_unused_while_pending = vk.TRUE,
+        .descriptor_binding_partially_bound = vk.TRUE,
+        .descriptor_binding_variable_descriptor_count = vk.TRUE,
+        .runtime_descriptor_array = vk.TRUE,
+    };
+
     const vulkan_1_3_features = vk.PhysicalDeviceVulkan13Features{
         .dynamic_rendering = vk.TRUE,
         .synchronization_2 = vk.TRUE,
+        .p_next = &vulkan_1_2_features,
     };
 
     return try instance.createDevice(candidate.pdev, &.{

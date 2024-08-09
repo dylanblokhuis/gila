@@ -62,7 +62,7 @@ pub fn main() !void {
         .entry_point = "fragmentMain",
     });
 
-    const pipeline = try gc.createGraphicsPipeline(.{
+    const triangle_pipeline = try gc.createGraphicsPipeline(.{
         .vertex = .{
             .shader = vertex_shader,
             .buffer_layout = &.{Gc.GraphicsPipeline.VertexBufferLayout{
@@ -90,18 +90,37 @@ pub fn main() !void {
             },
         },
     });
+    _ = triangle_pipeline; // autofix
 
-    const texture = try gc.createColorAttachment(&swapchain, .r8g8b8a8_srgb);
+    // _ = compute_pipeline; // autofix
+
+    const texture = try gc.createSwapchainSizedColorAttachment(&swapchain, .r8g8b8a8_srgb);
+    _ = texture; // autofix
     const vertex_buffer = try gc.createBuffer(.{
-        .location = .gpu_only,
+        .location = .prefer_device,
         .size = @sizeOf(Vertex) * 3,
         .usage = .{ .vertex_buffer_bit = true, .transfer_dst_bit = true },
         .name = "vertex_buffer",
     });
 
+    const storage_texture = try gc.createSwapchainSizedStorageTexture(&swapchain, .r8g8b8a8_unorm);
+
     var encoder = try CommandEncoder.init(&gc, .{
         .max_inflight = swapchain.swap_images.len,
     });
+
+    const compute_pipeline = try gc.createComputePipeline(.{
+        .shader = try gc.createShader(.{
+            .data = .{ .path = "./compute.slang" },
+            .kind = .compute,
+            .entry_point = "computeMain",
+        }),
+        .prepend_descriptor_set_layouts = &.{
+            encoder.getBindlessDescriptorSetLayout(),
+        },
+    });
+
+    try encoder.addToBindless(.{ .storage_image = storage_texture });
 
     {
         try encoder.reset();
@@ -117,6 +136,7 @@ pub fn main() !void {
         try encoder.submitBlocking();
     }
 
+    var frame_index: u32 = 0;
     while (c.glfwWindowShouldClose(window) == 0) {
         var w: c_int = undefined;
         var h: c_int = undefined;
@@ -129,39 +149,68 @@ pub fn main() !void {
         }
 
         try encoder.reset();
+        frame_index += 1;
+        // make a triangle
+        // {
+        //     encoder.imageBarrier(texture, .{
+        //         .new_access_mask = .{ .color_attachment_write_bit = true },
+        //         .new_stage_mask = .{ .color_attachment_output_bit = true },
+        //         .new_layout = .color_attachment_optimal,
+        //     });
+
+        //     var pass = try encoder.startGraphicsPass(.{
+        //         .pipeline = triangle_pipeline,
+        //         .color_attachments = &.{
+        //             .{
+        //                 .handle = texture,
+        //                 .clear_color = .{ .float_32 = .{ 0, 0, 0, 1.0 } },
+        //                 .load_op = .clear,
+        //                 .store_op = .store,
+        //             },
+        //         },
+        //         .depth_attachment = null,
+        //     });
+        //     defer encoder.endGraphicsPass(pass);
+
+        //     pass.setVertexBuffer(vertex_buffer);
+        //     pass.draw(.{
+        //         .vertex_count = 3,
+        //     });
+        // }
+
+        // make triangle a different color in compute
         {
-            encoder.imageBarrier(texture, .{
-                .new_access_mask = .{ .color_attachment_write_bit = true },
-                .new_stage_mask = .{ .color_attachment_output_bit = true },
-                .new_layout = .color_attachment_optimal,
+            var pass = try encoder.startComputePass(.{
+                .pipeline = compute_pipeline,
             });
-
-            var pass = try encoder.startGraphicsPass(.{
-                .pipeline = pipeline,
-                .color_attachments = &.{
-                    CommandEncoder.GraphicsPassDesc.ColorAttachment{
-                        .handle = texture,
-                        .clear_color = .{ .float_32 = .{ 0, 0, 0, 1.0 } },
-                        .load_op = .clear,
-                        .store_op = .store,
-                    },
-                },
-                .depth_attachment = null,
+            pass.bindDescriptorSets(0, &.{
+                encoder.getBindlessDescriptorSet(),
             });
-            defer encoder.endGraphicsPass(pass);
-
-            pass.setVertexBuffer(vertex_buffer);
-            pass.draw(.{
-                .vertex_count = 3,
+            encoder.imageBarrier(storage_texture, .{
+                .new_access_mask = .{ .shader_storage_write_bit = true },
+                .new_layout = .general,
+                .new_stage_mask = .{ .compute_shader_bit = true },
+            });
+            pass.setPushConstants(std.mem.asBytes(&extern struct {
+                frame_index: u32,
+                _padding: @Vector(3, u32) = undefined,
+            }{
+                .frame_index = frame_index,
+            }), 0);
+            pass.dispatch(swapchain.extent.width / 8, swapchain.extent.height / 8, 1);
+            encoder.imageBarrier(storage_texture, .{
+                .new_access_mask = .{ .transfer_read_bit = true },
+                .new_layout = .transfer_src_optimal,
+                .new_stage_mask = .{ .all_transfer_bit = true },
             });
         }
 
-        encoder.imageBarrier(texture, .{
-            .new_access_mask = .{ .transfer_read_bit = true },
-            .new_stage_mask = .{ .all_transfer_bit = true },
-            .new_layout = .transfer_src_optimal,
-        });
-        encoder.blitToSurface(&swapchain, texture);
+        // encoder.imageBarrier(texture, .{
+        //     .new_access_mask = .{ .transfer_read_bit = true },
+        //     .new_stage_mask = .{ .all_transfer_bit = true },
+        //     .new_layout = .transfer_src_optimal,
+        // });
+        encoder.blitToSurface(&swapchain, storage_texture);
 
         const state = try encoder.submitAndPresent(&swapchain);
         if (state == .suboptimal or swapchain.extent.width != @as(u32, @intCast(w)) or swapchain.extent.height != @as(u32, @intCast(h))) {

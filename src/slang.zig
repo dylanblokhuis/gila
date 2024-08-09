@@ -148,6 +148,7 @@ extern fn spSetTargetProfile(request: *SlangCompileRequest, target_index: c_int,
 extern fn spAddCodeGenTarget(request: *SlangCompileRequest, target: SlangCompileTarget) c_int;
 extern fn spSetCodeGenTarget(request: *SlangCompileRequest, target: SlangCompileTarget) void;
 extern fn spSetTargetFlags(request: *SlangCompileRequest, target_index: c_int, flags: SlangTargetFlags) void;
+extern fn spSetTargetForceGLSLScalarBufferLayout(request: *SlangCompileRequest, target_index: c_int, force_scalar_layout: bool) void;
 
 extern fn spAddEntryPoint(request: *SlangCompileRequest, translation_unit_index: c_int, name: [*c]const u8, stage: SlangStage) c_int;
 
@@ -158,7 +159,6 @@ extern fn spCompile(request: *SlangCompileRequest) SlangResult;
 extern fn spAddTranslationUnit(request: *SlangCompileRequest, source_language: SlangSourceLanguage, name: [*c]const u8) c_int;
 extern fn spAddTranslationUnitSourceFile(request: *SlangCompileRequest, translation_unit_index: c_int, path: [*c]const u8) void;
 extern fn spAddTranslationUnitSourceString(request: *SlangCompileRequest, translation_unit_index: c_int, path: [*c]const u8, source: [*c]const u8) void;
-
 extern fn spGetEntryPointCode(request: *SlangCompileRequest, entry_point_index: c_int, out_size: *usize) *anyopaque;
 
 const std = @import("std");
@@ -179,6 +179,7 @@ pub fn compileToSpv(
     const index = spAddCodeGenTarget(req, .SLANG_SPIRV);
     spSetTargetProfile(req, index, profile_id);
     spSetTargetFlags(req, index, .SLANG_TARGET_FLAG_GENERATE_SPIRV_DIRECTLY);
+    spSetTargetForceGLSLScalarBufferLayout(req, index, true);
 
     const translation_index = spAddTranslationUnit(req, .SLANG_SOURCE_LANGUAGE_SLANG, "".ptr);
     spAddTranslationUnitSourceFile(req, translation_index, filepath.ptr);

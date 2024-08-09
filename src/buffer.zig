@@ -19,15 +19,15 @@ pub const CreateInfo = struct {
 
 pub const MemoryLocation = enum(c_uint) {
     //unknown = 0,
-    gpu_only = 1,
+    // gpu_only = 1,
     //cpu_only = 2,
-    cpu_to_gpu = 3,
-    gpu_to_cpu = 4,
-    cpu_copy = 5,
-    gpu_lazily_allocated = 6,
+    // cpu_to_gpu = 3,
+    // gpu_to_cpu = 4,
+    // cpu_copy = 5,
+    // gpu_lazily_allocated = 6,
     auto = 7,
-    auto_prefer_device = 8,
-    auto_prefer_host = 9,
+    prefer_device = 8,
+    prefer_host = 9,
 };
 
 pub fn create(gc: *Gc, desc: CreateInfo) !Self {
@@ -54,7 +54,14 @@ pub fn create(gc: *Gc, desc: CreateInfo) !Self {
         .usage = @intFromEnum(desc.location),
     };
     var alloc_info: c.VmaAllocationInfo = undefined;
-    const result: vk.Result = @enumFromInt(c.vmaCreateBuffer(gc.vma, &buffer_info, &alloc_create_info, &buffer, &allocation, &alloc_info));
+    const result: vk.Result = @enumFromInt(c.vmaCreateBuffer(
+        gc.vma,
+        &buffer_info,
+        &alloc_create_info,
+        &buffer,
+        &allocation,
+        &alloc_info,
+    ));
 
     switch (result) {
         .success => {},

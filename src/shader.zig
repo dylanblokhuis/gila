@@ -85,7 +85,7 @@ pub fn destroy(self: *Self, gc: *Gc) void {
 }
 
 /// TODO: vertex descriptors
-pub fn do_reflect(self: *const Self, gc: *Gc, ignore_sets: ?usize) !SpirvReflect {
+pub fn doReflect(self: *const Self, gc: *Gc, ignore_sets: ?usize) !SpirvReflect {
     var module: c.SpvReflectShaderModule = undefined;
     if (c.spvReflectCreateShaderModule(self.spirv.len, self.spirv.ptr, &module) != c.SPV_REFLECT_RESULT_SUCCESS) {
         // std.log.err("spvReflectCreateShaderModule failed", .{});
@@ -113,7 +113,11 @@ pub fn do_reflect(self: *const Self, gc: *Gc, ignore_sets: ?usize) !SpirvReflect
     var pool_sizes = std.AutoArrayHashMapUnmanaged(vk.DescriptorType, vk.DescriptorPoolSize){};
     defer pool_sizes.deinit(gc.allocator);
 
-    const stage_flags = vk.ShaderStageFlags.fromInt(c.VK_SHADER_STAGE_ALL);
+    const stage_flags = vk.ShaderStageFlags{
+        .vertex_bit = self.kind == Kind.vertex or self.kind == Kind.fragment,
+        .fragment_bit = self.kind == Kind.fragment,
+        .compute_bit = self.kind == Kind.compute,
+    };
     for (input_vars, 0..) |set, set_nr| {
         if (ignore_sets) |n| {
             if (set_nr < n) {

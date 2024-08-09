@@ -7,7 +7,7 @@ pipeline: vk.Pipeline,
 layout: vk.PipelineLayout,
 sets: []vk.DescriptorSet,
 pool: ?vk.DescriptorPool = null,
-prepend_descriptor_sets: ?[]Gc.PrependDescriptorSet = null,
+first_set: u32 = 0,
 
 pub const CreateInfo = struct {
     vertex: VertexState,
@@ -16,8 +16,7 @@ pub const CreateInfo = struct {
     multisample: MultiSampleState = MultiSampleState{},
     /// when null, the pipeline will not have a fragment stage but depth will still be written by the vertex shader.
     fragment: ?FragmentState = null,
-    /// particulary useful when using bindless descriptors, this will prepend the set layouts and ignore the ones up until the count of the prepend_descriptor_sets
-    prepend_descriptor_sets: ?[]const Gc.PrependDescriptorSet = null,
+    prepend_descriptor_set_layouts: ?[]vk.DescriptorSetLayout = null,
     flags: Flags = Flags{},
 };
 
@@ -421,12 +420,13 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
         }
     }
 
-    const reflect = try shader_used_for_reflection.do_reflect(gc, if (desc.prepend_descriptor_sets) |s| @intCast(s.len) else null);
+    const reflect = try shader_used_for_reflection.doReflect(gc, if (desc.prepend_descriptor_set_layouts) |s| @intCast(s.len) else null);
+    const first_set: u32 = if (desc.prepend_descriptor_set_layouts) |s| @intCast(s.len) else 0;
 
-    const pipeline_layout = if (desc.prepend_descriptor_sets) |prepend| blk: {
+    const pipeline_layout = if (desc.prepend_descriptor_set_layouts) |prepend| blk: {
         const set_layouts = try gc.allocator.alloc(vk.DescriptorSetLayout, prepend.len + reflect.set_layouts.len);
-        for (prepend, 0..) |set, i| {
-            set_layouts[i] = set.layout;
+        for (prepend, 0..) |layout, i| {
+            set_layouts[i] = layout;
         }
         for (reflect.set_layouts, 0..) |layout, i| {
             set_layouts[prepend.len + i] = layout;
@@ -481,22 +481,23 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
         return std.debug.panic("failed to create graphics pipeline: {}", .{result});
     }
 
-    const owned_prepend: ?[]Gc.PrependDescriptorSet = if (desc.prepend_descriptor_sets) |prepend| blk: {
-        const sets = try gc.allocator.alloc(Gc.PrependDescriptorSet, prepend.len);
-        for (prepend, 0..) |set, i| {
-            sets[i] = set;
-        }
-        break :blk sets;
-    } else blk: {
-        break :blk null;
-    };
+    // const owned_prepend: ?[]Gc.PrependDescriptorSet = if (desc.prepend_descriptor_sets) |prepend| blk: {
+    //     const sets = try gc.allocator.alloc(Gc.PrependDescriptorSet, prepend.len);
+    //     for (prepend, 0..) |set, i| {
+    //         sets[i] = set;
+    //     }
+    //     break :blk sets;
+    // } else blk: {
+    //     break :blk null;
+    // };
 
     return Self{
         .pipeline = pipeline,
         .layout = pipeline_layout,
         .sets = reflect.sets,
         .pool = reflect.pool,
-        .prepend_descriptor_sets = owned_prepend,
+        .first_set = first_set,
+        // .prepend_descriptor_sets = owned_prepend,
     };
 }
 
@@ -504,136 +505,136 @@ pub fn destroy(self: *Self, gc: *Gc) void {
     gc.device.destroyPipeline(self.pipeline, null);
 }
 
-pub fn getDescriptorSetsCombined(self: *const Self, gc: *Gc) ![]vk.DescriptorSet {
-    if (self.prepend_descriptor_sets) |prepend| {
-        var sets = try gc.allocator.alloc(vk.DescriptorSet, prepend.len + self.sets.len);
-        for (prepend, 0..) |set, i| {
-            sets[i] = set.set;
-        }
-        for (self.sets, 0..) |set, i| {
-            sets[prepend.len + i] = set;
-        }
-        return sets;
-    } else {
-        return self.sets;
-    }
-}
+// pub fn getDescriptorSetsCombined(self: *const Self, gc: *Gc) ![]vk.DescriptorSet {
+//     if (self.prepend_descriptor_sets) |prepend| {
+//         var sets = try gc.allocator.alloc(vk.DescriptorSet, prepend.len + self.sets.len);
+//         for (prepend, 0..) |set, i| {
+//             sets[i] = set.set;
+//         }
+//         for (self.sets, 0..) |set, i| {
+//             sets[prepend.len + i] = set;
+//         }
+//         return sets;
+//     } else {
+//         return self.sets;
+//     }
+// }
 
-const UpdateDescriptor = union(enum) {
-    buffer: Gc.BufferHandle,
-    texture: Gc.TextureHandle,
-};
-const DescriptorLocation = struct {
-    set: u32,
-    binding: u32,
-    array_element: u32 = 0,
-};
+// const UpdateDescriptor = union(enum) {
+//     buffer: Gc.BufferHandle,
+//     texture: Gc.TextureHandle,
+// };
+// const DescriptorLocation = struct {
+//     set: u32,
+//     binding: u32,
+//     array_element: u32 = 0,
+// };
 
-/// runs updateDescriptorSets with the given data_handle
-pub fn updateDescriptor(self: *const Self, gc: *Gc, location: DescriptorLocation, data_handle: UpdateDescriptor, sampler_desc: ?Gc.SamplerDesc) void {
-    const sets = self.getDescriptorSetsCombined(gc) catch unreachable;
-    const set = sets[location.set];
+// /// runs updateDescriptorSets with the given data_handle
+// pub fn updateDescriptor(self: *const Self, gc: *Gc, location: DescriptorLocation, data_handle: UpdateDescriptor, sampler_desc: ?Gc.SamplerDesc) void {
+//     const sets = self.getDescriptorSetsCombined(gc) catch unreachable;
+//     const set = sets[location.set];
 
-    switch (data_handle) {
-        .buffer => |handle| {
-            const buffer = gc.buffers.get(handle).?;
+//     switch (data_handle) {
+//         .buffer => |handle| {
+//             const buffer = gc.buffers.get(handle).?;
 
-            var ty = vk.DescriptorType.uniform_buffer;
+//             var ty = vk.DescriptorType.uniform_buffer;
 
-            if (buffer.usage.contains(.{ .storage_buffer_bit = true })) {
-                ty = vk.DescriptorType.storage_buffer;
-            }
+//             if (buffer.usage.contains(.{ .storage_buffer_bit = true })) {
+//                 ty = vk.DescriptorType.storage_buffer;
+//             }
 
-            if (buffer.usage.contains(.{ .uniform_buffer_bit = true })) {
-                ty = vk.DescriptorType.uniform_buffer;
-            }
+//             if (buffer.usage.contains(.{ .uniform_buffer_bit = true })) {
+//                 ty = vk.DescriptorType.uniform_buffer;
+//             }
 
-            const texel_buffer_view = [0]vk.BufferView{};
-            const image_info = [0]vk.DescriptorImageInfo{};
-            var buffer_info = vk.DescriptorBufferInfo{
-                .buffer = buffer.buffer,
-                .offset = 0,
-                .range = vk.WHOLE_SIZE,
-            };
+//             const texel_buffer_view = [0]vk.BufferView{};
+//             const image_info = [0]vk.DescriptorImageInfo{};
+//             var buffer_info = vk.DescriptorBufferInfo{
+//                 .buffer = buffer.buffer,
+//                 .offset = 0,
+//                 .range = vk.WHOLE_SIZE,
+//             };
 
-            const write = vk.WriteDescriptorSet{
-                .dst_set = set,
-                .dst_binding = location.binding,
-                .dst_array_element = location.array_element,
-                .descriptor_count = 1,
-                .descriptor_type = ty,
-                .p_image_info = &image_info,
-                .p_buffer_info = @ptrCast(&buffer_info),
-                .p_texel_buffer_view = &texel_buffer_view,
-            };
+//             const write = vk.WriteDescriptorSet{
+//                 .dst_set = set,
+//                 .dst_binding = location.binding,
+//                 .dst_array_element = location.array_element,
+//                 .descriptor_count = 1,
+//                 .descriptor_type = ty,
+//                 .p_image_info = &image_info,
+//                 .p_buffer_info = @ptrCast(&buffer_info),
+//                 .p_texel_buffer_view = &texel_buffer_view,
+//             };
 
-            gc.device.updateDescriptorSets(1, @ptrCast(&write), 0, null);
-        },
-        .texture => |handle| {
-            const texture = gc.textures.get(handle).?;
+//             gc.device.updateDescriptorSets(1, @ptrCast(&write), 0, null);
+//         },
+//         .texture => |handle| {
+//             const texture = gc.textures.get(handle).?;
 
-            const buffer_info = [0]vk.DescriptorBufferInfo{};
-            const texel_buffer_view = [0]vk.BufferView{};
+//             const buffer_info = [0]vk.DescriptorBufferInfo{};
+//             const texel_buffer_view = [0]vk.BufferView{};
 
-            var image_info = vk.DescriptorImageInfo{
-                .sampler = vk.Sampler.null_handle,
-                .image_view = texture.view,
-                .image_layout = vk.ImageLayout.general,
-            };
+//             var image_info = vk.DescriptorImageInfo{
+//                 .sampler = vk.Sampler.null_handle,
+//                 .image_view = texture.view,
+//                 .image_layout = vk.ImageLayout.general,
+//             };
 
-            var ty = vk.DescriptorType.combined_image_sampler;
+//             var ty = vk.DescriptorType.combined_image_sampler;
 
-            if (texture.usage.contains(.{ .color_attachment_bit = true })) {
-                image_info = vk.DescriptorImageInfo{
-                    .sampler = vk.Sampler.null_handle,
-                    .image_view = texture.view,
-                    .image_layout = vk.ImageLayout.color_attachment_optimal,
-                };
-                ty = vk.DescriptorType.input_attachment;
-            }
+//             if (texture.usage.contains(.{ .color_attachment_bit = true })) {
+//                 image_info = vk.DescriptorImageInfo{
+//                     .sampler = vk.Sampler.null_handle,
+//                     .image_view = texture.view,
+//                     .image_layout = vk.ImageLayout.color_attachment_optimal,
+//                 };
+//                 ty = vk.DescriptorType.input_attachment;
+//             }
 
-            if (texture.usage.contains(.{ .depth_stencil_attachment_bit = true })) {
-                image_info = vk.DescriptorImageInfo{
-                    .sampler = vk.Sampler.null_handle,
-                    .image_view = texture.view,
-                    .image_layout = vk.ImageLayout.depth_attachment_optimal,
-                };
-                ty = vk.DescriptorType.input_attachment;
-            }
+//             if (texture.usage.contains(.{ .depth_stencil_attachment_bit = true })) {
+//                 image_info = vk.DescriptorImageInfo{
+//                     .sampler = vk.Sampler.null_handle,
+//                     .image_view = texture.view,
+//                     .image_layout = vk.ImageLayout.depth_attachment_optimal,
+//                 };
+//                 ty = vk.DescriptorType.input_attachment;
+//             }
 
-            if (texture.usage.contains(.{ .storage_bit = true })) {
-                image_info = vk.DescriptorImageInfo{
-                    .sampler = vk.Sampler.null_handle,
-                    .image_view = texture.view,
-                    .image_layout = vk.ImageLayout.general,
-                };
-                ty = vk.DescriptorType.storage_image;
-            }
+//             if (texture.usage.contains(.{ .storage_bit = true })) {
+//                 image_info = vk.DescriptorImageInfo{
+//                     .sampler = vk.Sampler.null_handle,
+//                     .image_view = texture.view,
+//                     .image_layout = vk.ImageLayout.general,
+//                 };
+//                 ty = vk.DescriptorType.storage_image;
+//             }
 
-            if (texture.usage.contains(.{ .sampled_bit = true })) {
-                if (sampler_desc == null) {
-                    return std.debug.panic("a sampler_desc is required for sampled textures", .{});
-                }
+//             if (texture.usage.contains(.{ .sampled_bit = true })) {
+//                 if (sampler_desc == null) {
+//                     return std.debug.panic("a sampler_desc is required for sampled textures", .{});
+//                 }
 
-                image_info = vk.DescriptorImageInfo{
-                    .sampler = gc.samplers.get(sampler_desc.?).?,
-                    .image_view = texture.view,
-                    .image_layout = vk.ImageLayout.shader_read_only_optimal,
-                };
-                ty = vk.DescriptorType.combined_image_sampler;
-            }
+//                 image_info = vk.DescriptorImageInfo{
+//                     .sampler = gc.samplers.get(sampler_desc.?).?,
+//                     .image_view = texture.view,
+//                     .image_layout = vk.ImageLayout.shader_read_only_optimal,
+//                 };
+//                 ty = vk.DescriptorType.combined_image_sampler;
+//             }
 
-            const write = vk.WriteDescriptorSet{
-                .dst_set = set,
-                .dst_binding = location.binding,
-                .dst_array_element = location.array_element,
-                .descriptor_count = 1,
-                .descriptor_type = ty,
-                .p_image_info = @ptrCast(&image_info),
-                .p_buffer_info = @ptrCast(&buffer_info),
-                .p_texel_buffer_view = @ptrCast(&texel_buffer_view),
-            };
-            gc.device.updateDescriptorSets(1, @ptrCast(&write), 0, null);
-        },
-    }
-}
+//             const write = vk.WriteDescriptorSet{
+//                 .dst_set = set,
+//                 .dst_binding = location.binding,
+//                 .dst_array_element = location.array_element,
+//                 .descriptor_count = 1,
+//                 .descriptor_type = ty,
+//                 .p_image_info = @ptrCast(&image_info),
+//                 .p_buffer_info = @ptrCast(&buffer_info),
+//                 .p_texel_buffer_view = @ptrCast(&texel_buffer_view),
+//             };
+//             gc.device.updateDescriptorSets(1, @ptrCast(&write), 0, null);
+//         },
+//     }
+// }

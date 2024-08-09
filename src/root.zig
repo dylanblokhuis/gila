@@ -7,6 +7,7 @@ pub const Shader = @import("shader.zig");
 pub const Texture = @import("texture.zig");
 pub const Buffer = @import("buffer.zig");
 pub const GraphicsPipeline = @import("graphics_pipeline.zig");
+pub const ComputePipeline = @import("compute_pipeline.zig");
 pub const CommandEncoder = @import("command_encoder.zig");
 const MultiArenaUnmanaged = @import("generational-arena").MultiArenaUnmanaged;
 
@@ -72,13 +73,16 @@ pub const ShaderHandle = ShaderPool.Index;
 pub const GraphicsPipelinePool = MultiArenaUnmanaged(GraphicsPipeline, u4, u4);
 pub const GraphicsPipelineHandle = GraphicsPipelinePool.Index;
 
+pub const ComputePipelinePool = MultiArenaUnmanaged(ComputePipeline, u4, u4);
+pub const ComputePipelineHandle = ComputePipelinePool.Index;
+
 pub const TexturePool = MultiArenaUnmanaged(Texture, u16, u16);
 pub const TextureHandle = TexturePool.Index;
 
 pub const BufferPool = MultiArenaUnmanaged(Buffer, u16, u16);
 pub const BufferHandle = BufferPool.Index;
 
-pub const PrependDescriptorSet = struct { layout: vk.DescriptorSetLayout, set: vk.DescriptorSet };
+// pub const PrependDescriptorSet = struct { layout: vk.DescriptorSetLayout };
 
 allocator: Allocator,
 base: BaseDispatch,
@@ -97,6 +101,7 @@ debug_messenger: vk.DebugUtilsMessengerEXT,
 vma: c.VmaAllocator,
 shaders: ShaderPool = .{},
 graphics_pipelines: GraphicsPipelinePool = .{},
+compute_pipelines: ComputePipelinePool = .{},
 textures: TexturePool = .{},
 buffers: BufferPool = .{},
 
@@ -244,6 +249,11 @@ pub fn createGraphicsPipeline(self: *Self, create: GraphicsPipeline.CreateInfo) 
     return try self.graphics_pipelines.append(self.allocator, pipeline);
 }
 
+pub fn createComputePipeline(self: *Self, create: ComputePipeline.CreateInfo) !ComputePipelinePool.Index {
+    const pipeline = try ComputePipeline.create(self, create);
+    return try self.compute_pipelines.append(self.allocator, pipeline);
+}
+
 pub fn createTexture(self: *Self, create: Texture.CreateInfo) !TexturePool.Index {
     const tex = try Texture.create(self, create);
     return try self.textures.append(self.allocator, tex);
@@ -254,7 +264,7 @@ pub fn destroyTexture(self: *Self, texture: TexturePool.Index) void {
     inner.destroy(self);
 }
 
-pub fn createColorAttachment(self: *Self, swapchain: *const Swapchain, format: ?vk.Format) !TexturePool.Index {
+pub fn createSwapchainSizedColorAttachment(self: *Self, swapchain: *const Swapchain, format: ?vk.Format) !TexturePool.Index {
     const tex = try Texture.create(self, .{
         .dedicated = true,
         .dimensions = .{
@@ -263,10 +273,30 @@ pub fn createColorAttachment(self: *Self, swapchain: *const Swapchain, format: ?
             .depth = 1,
         },
         .format = format orelse swapchain.surface_format.format,
-        .name = "color_attachment",
+        .name = "swapchain_sized_color_attachment",
         .usage = vk.ImageUsageFlags{
             .color_attachment_bit = true,
             .transfer_src_bit = true,
+            .sampled_bit = true,
+        },
+    });
+    return try self.textures.append(self.allocator, tex);
+}
+
+pub fn createSwapchainSizedStorageTexture(self: *Self, swapchain: *const Swapchain, format: vk.Format) !TexturePool.Index {
+    const tex = try Texture.create(self, .{
+        .dedicated = true,
+        .dimensions = .{
+            .width = swapchain.extent.width,
+            .height = swapchain.extent.height,
+            .depth = 1,
+        },
+        .format = format,
+        .name = "swapchain_sized_storage_texture",
+        .usage = vk.ImageUsageFlags{
+            .storage_bit = true,
+            .transfer_src_bit = true,
+            .sampled_bit = true,
         },
     });
     return try self.textures.append(self.allocator, tex);
