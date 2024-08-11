@@ -283,6 +283,25 @@ pub fn createSwapchainSizedColorAttachment(self: *Self, swapchain: *const Swapch
     return try self.textures.append(self.allocator, tex);
 }
 
+pub fn createSwapchainSizedDepthAttachment(self: *Self, swapchain: *const Swapchain, format: ?vk.Format) !TexturePool.Index {
+    const tex = try Texture.create(self, .{
+        .dedicated = true,
+        .dimensions = .{
+            .width = swapchain.extent.width,
+            .height = swapchain.extent.height,
+            .depth = 1,
+        },
+        .format = format orelse vk.Format.d32_sfloat,
+        .name = "swapchain_sized_depth_attachment",
+        .usage = vk.ImageUsageFlags{
+            .depth_stencil_attachment_bit = true,
+            .transfer_src_bit = true,
+            .sampled_bit = true,
+        },
+    });
+    return try self.textures.append(self.allocator, tex);
+}
+
 pub fn createSwapchainSizedStorageTexture(self: *Self, swapchain: *const Swapchain, format: vk.Format) !TexturePool.Index {
     const tex = try Texture.create(self, .{
         .dedicated = true,
