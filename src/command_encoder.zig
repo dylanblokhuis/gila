@@ -312,11 +312,11 @@ const GraphicsPass = struct {
     }
 
     pub fn setPushConstants(
-        self: *ComputePass,
+        self: *GraphicsPass,
         data: []const u8,
         offset: u32,
     ) void {
-        const layout = self.gc.graphics_pipelines.getField(self.desc.pipeline, .layout).?;
+        const layout = self.encoder.gc.graphics_pipelines.getField(self.desc.pipeline, .layout).?;
         self.encoder.gc.device.cmdPushConstants(
             self.encoder.getCommandBuffer(),
             layout,

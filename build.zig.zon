@@ -20,8 +20,8 @@
             .hash = "12208958f173b8b81bfac797955f0416ab38b21d1f69d4ebf6c7ca460a828a41cd45",
         },
         .@"SPIRV-Reflect" = .{
-            .url = "https://github.com/KhronosGroup/SPIRV-Reflect/archive/756e7b13243b5c4b110bb63dba72d10716dd1dfe.tar.gz",
-            .hash = "12209a87c3be1635e808a1822aae870276e9ea9d31c3247485887b9e675386a9872e",
+            .url = "https://github.com/KhronosGroup/SPIRV-Reflect/archive/c07ddbd7f3ef6f4be3edcf9a091d745d11bf0e2a.tar.gz",
+            .hash = "1220c47287b9a5ae20da3ca56089d25afb2bb7601176649456a5d5fdb4843420534b",
         },
         .@"Vulkan-Headers" = .{
             .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/e3c37e6e184a232e10b01dff5a065ce48c047f88.tar.gz",
@@ -38,6 +38,10 @@
         .@"generational-arena" = .{
             .url = "https://github.com/dylanblokhuis/generational-arena/archive/ec810389ee348412bfd03ecc54af320a2ded3702.tar.gz",
             .hash = "122065d08ff60425f29dff6622e4c19872457348c0cb6efbdd6127663ff8bea21f68",
+        },
+        .@"SPIRV-Tools" = .{
+            .url = "https://github.com/hexops/spirv-tools/archive/4dad52926d917c7e714511af554038e2f7ddfa09.tar.gz",
+            .hash = "1220b3b094e64cb8d084fa5991fcaa63ce98e8327d9f312bbe1c639dcec1f7fd457f",
         },
     },
     .paths = .{

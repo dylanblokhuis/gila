@@ -62,6 +62,17 @@ pub fn build(b: *std.Build) !void {
         lib.installHeadersDirectory(glfw.path("include/GLFW"), "GLFW", .{});
     }
 
+    // add spirv-tools
+    {
+        const spvtools = b.dependency("SPIRV-Tools", .{
+            .target = target,
+            .optimize = optimize,
+        });
+
+        lib.linkLibrary(spvtools.artifact("spirv-opt"));
+        lib.installHeadersDirectory(spvtools.path("include/spirv-tools"), "spirv-tools", .{});
+    }
+
     // add slang
     const slang_link_path: ?std.Build.LazyPath = blk: {
         var download_step = SlangDownloadBinaryStep.init(b, lib, .{});

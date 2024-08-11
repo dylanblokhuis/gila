@@ -8,7 +8,7 @@ const Self = @This();
 module: vk.ShaderModule,
 kind: Kind,
 entry_point: [:0]const u8,
-spirv: []u8,
+spirv: []const u8,
 path: ?[]const u8 = null,
 
 pub const SpirvReflect = struct {
@@ -31,7 +31,7 @@ pub const OptimizationLevel = enum {
 };
 
 pub const Data = union(enum) {
-    spirv: []u8,
+    spirv: []const u8,
     path: [:0]const u8,
 };
 
@@ -42,17 +42,18 @@ pub const CreateInfo = struct {
 };
 
 pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
-    const spirv = switch (desc.data) {
+    const spirv = try optimizeSpirv(gc.allocator, switch (desc.data) {
         .spirv => desc.data.spirv,
         .path => |path| try Gc.slang.compileToSpv(gc.allocator, path, desc.entry_point, switch (desc.kind) {
             .compute => Gc.slang.SlangStage.SLANG_STAGE_COMPUTE,
             .fragment => Gc.slang.SlangStage.SLANG_STAGE_FRAGMENT,
             .vertex => Gc.slang.SlangStage.SLANG_STAGE_VERTEX,
         }),
-    };
+    });
 
     if (desc.data == .path) {
-        const filename = try std.fmt.allocPrint(gc.allocator, "{s}.spv", .{desc.data.path});
+        var split = std.mem.splitBackwards(u8, desc.data.path, "/");
+        const filename = try std.fmt.allocPrint(gc.allocator, "{s}-{s}.spv", .{ desc.entry_point, split.first() });
         const path = try std.fs.path.join(gc.allocator, &.{ "./zig-out", filename });
         const file = try std.fs.cwd().createFile(path, .{});
         try file.writeAll(spirv);
@@ -87,15 +88,13 @@ pub fn destroy(self: *Self, gc: *Gc) void {
 /// TODO: vertex descriptors
 pub fn doReflect(self: *const Self, gc: *Gc, ignore_sets: ?usize) !SpirvReflect {
     var module: c.SpvReflectShaderModule = undefined;
-    if (c.spvReflectCreateShaderModule(self.spirv.len, self.spirv.ptr, &module) != c.SPV_REFLECT_RESULT_SUCCESS) {
-        // std.log.err("spvReflectCreateShaderModule failed", .{});
+    if (c.spvReflectCreateShaderModule2(c.SPV_REFLECT_MODULE_FLAG_NONE, self.spirv.len, self.spirv.ptr, &module) != c.SPV_REFLECT_RESULT_SUCCESS) {
         return error.ShaderReflectionFailed;
     }
     defer c.spvReflectDestroyShaderModule(&module);
 
     var var_count: u32 = 0;
     if (c.spvReflectEnumerateDescriptorSets(&module, &var_count, null) != c.SPV_REFLECT_RESULT_SUCCESS) {
-        // std.log.err("spvReflectEnumerateDescriptorSets failed", .{file_name});
         return error.ShaderReflectionFailed;
     }
 
@@ -103,7 +102,6 @@ pub fn doReflect(self: *const Self, gc: *Gc, ignore_sets: ?usize) !SpirvReflect 
     defer gc.allocator.free(input_vars);
 
     if (c.spvReflectEnumerateDescriptorSets(&module, &var_count, input_vars.ptr) != c.SPV_REFLECT_RESULT_SUCCESS) {
-        // std.log.err("spvReflectEnumerateDescriptorSets failed", .{file_name});
         return error.ShaderReflectionFailed;
     }
 
@@ -115,7 +113,7 @@ pub fn doReflect(self: *const Self, gc: *Gc, ignore_sets: ?usize) !SpirvReflect 
 
     const stage_flags = vk.ShaderStageFlags{
         .vertex_bit = self.kind == Kind.vertex or self.kind == Kind.fragment,
-        .fragment_bit = self.kind == Kind.fragment,
+        .fragment_bit = self.kind == Kind.vertex or self.kind == Kind.fragment,
         .compute_bit = self.kind == Kind.compute,
     };
     for (input_vars, 0..) |set, set_nr| {
@@ -172,10 +170,16 @@ pub fn doReflect(self: *const Self, gc: *Gc, ignore_sets: ?usize) !SpirvReflect 
     }
 
     var push_constant_count: u32 = 0;
-    _ = c.spvReflectEnumeratePushConstants(&module, &push_constant_count, null);
+    if (c.spvReflectEnumeratePushConstants(&module, &push_constant_count, null) != c.SPV_REFLECT_RESULT_SUCCESS) {
+        // std.log.err("spvReflectEnumeratePushConstants failed", .{file_name});
+        return error.ShaderReflectionFailed;
+    }
 
     var push_constants = try std.BoundedArray([*c]c.SpvReflectBlockVariable, 4).init(push_constant_count);
-    _ = c.spvReflectEnumeratePushConstants(&module, &push_constant_count, push_constants.slice().ptr);
+    if (c.spvReflectEnumeratePushConstants(&module, &push_constant_count, push_constants.slice().ptr) != c.SPV_REFLECT_RESULT_SUCCESS) {
+        // std.log.err("spvReflectEnumeratePushConstants failed", .{file_name});
+        return error.ShaderReflectionFailed;
+    }
 
     var ranges = try gc.allocator.alloc(vk.PushConstantRange, push_constant_count);
     for (push_constants.slice(), 0..) |pc, i| {
@@ -192,4 +196,53 @@ pub fn doReflect(self: *const Self, gc: *Gc, ignore_sets: ?usize) !SpirvReflect 
         .set_layouts = try set_layouts.toOwnedSlice(gc.allocator),
         .push_constants = ranges,
     };
+}
+
+fn spvMessageConsumer(
+    level: c.spv_message_level_t,
+    src: [*c]const u8,
+    pos: [*c]const c.spv_position_t,
+    msg: [*c]const u8,
+) callconv(.C) void {
+    switch (level) {
+        c.SPV_MSG_FATAL,
+        c.SPV_MSG_INTERNAL_ERROR,
+        c.SPV_MSG_ERROR,
+        => {
+            // TODO - don't panic
+            std.debug.panic("{s} at :{d}:{d}\n{s}", .{
+                std.mem.span(msg),
+                pos.*.line,
+                pos.*.column,
+                std.mem.span(src),
+            });
+        },
+        else => {},
+    }
+}
+
+fn optimizeSpirv(allocator: std.mem.Allocator, spirv: []const u8) ![]const u8 {
+    const optimizer = c.spvOptimizerCreate(c.SPV_ENV_VULKAN_1_3);
+    defer c.spvOptimizerDestroy(optimizer);
+
+    c.spvOptimizerSetMessageConsumer(optimizer, spvMessageConsumer);
+    c.spvOptimizerRegisterPerformancePasses(optimizer);
+    c.spvOptimizerRegisterLegalizationPasses(optimizer);
+
+    const options = c.spvOptimizerOptionsCreate();
+    defer c.spvOptimizerOptionsDestroy(options);
+
+    c.spvOptimizerOptionsSetRunValidator(options, true);
+
+    const spirv_words_ptr = @as([*]const u32, @ptrCast(@alignCast(spirv.ptr)));
+    const spirv_words = spirv_words_ptr[0 .. spirv.len / @sizeOf(u32)];
+
+    var optimized_spirv: c.spv_binary = undefined;
+    if (c.spvOptimizerRun(optimizer, spirv_words.ptr, spirv_words.len, &optimized_spirv, options) != c.SPV_SUCCESS) {
+        return error.SpirvOptimizationFailed;
+    }
+
+    const code_bytes_ptr = @as([*]const u8, @ptrCast(optimized_spirv.*.code));
+    const code_bytes = code_bytes_ptr[0 .. optimized_spirv.*.wordCount * @sizeOf(u32)];
+    return allocator.dupe(u8, code_bytes);
 }

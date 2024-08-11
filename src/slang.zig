@@ -31,6 +31,7 @@ const SlangBool = bool;
 const SlangSession = opaque {};
 const SlangCompileRequest = opaque {};
 const SlangProfileID = c_uint;
+const SlangReflection = opaque {};
 
 const SlangCompileTarget = enum(c_int) {
     SLANG_TARGET_UNKNOWN,
@@ -161,6 +162,9 @@ extern fn spAddTranslationUnitSourceFile(request: *SlangCompileRequest, translat
 extern fn spAddTranslationUnitSourceString(request: *SlangCompileRequest, translation_unit_index: c_int, path: [*c]const u8, source: [*c]const u8) void;
 extern fn spGetEntryPointCode(request: *SlangCompileRequest, entry_point_index: c_int, out_size: *usize) *anyopaque;
 
+// extern fn spGetReflection(request: *SlangCompileRequest) *SlangReflection;
+// extern fn spReflection_GetParameterCount(reflection: *SlangReflection) c_int;
+
 const std = @import("std");
 
 pub fn compileToSpv(
@@ -174,7 +178,7 @@ pub fn compileToSpv(
 
     const req = spCreateCompileRequest(session);
     defer spDestroyCompileRequest(req);
-    const profile_id = spFindProfile(session, "spirv_latest");
+    const profile_id = spFindProfile(session, "spirv_1_5".ptr);
 
     const index = spAddCodeGenTarget(req, .SLANG_SPIRV);
     spSetTargetProfile(req, index, profile_id);

@@ -16,7 +16,7 @@ pub const CreateInfo = struct {
     multisample: MultiSampleState = MultiSampleState{},
     /// when null, the pipeline will not have a fragment stage but depth will still be written by the vertex shader.
     fragment: ?FragmentState = null,
-    prepend_descriptor_set_layouts: ?[]vk.DescriptorSetLayout = null,
+    prepend_descriptor_set_layouts: ?[]const vk.DescriptorSetLayout = null,
     flags: Flags = Flags{},
 };
 

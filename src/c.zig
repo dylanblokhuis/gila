@@ -4,4 +4,5 @@ pub usingnamespace @cImport({
     @cInclude("GLFW/glfw3.h");
     @cInclude("spirv_reflect/spirv_reflect.h");
     @cInclude("vk_mem_alloc.h");
+    @cInclude("spirv-tools/libspirv.h");
 });
