@@ -36,8 +36,8 @@
             .hash = "1220c15e66c13f9633fcfd50b5ed265f74f2950c98b1f1defd66298fa027765e0190",
         },
         .@"generational-arena" = .{
-            .url = "https://github.com/dylanblokhuis/generational-arena/archive/ec810389ee348412bfd03ecc54af320a2ded3702.tar.gz",
-            .hash = "122065d08ff60425f29dff6622e4c19872457348c0cb6efbdd6127663ff8bea21f68",
+            .url = "https://github.com/dylanblokhuis/generational-arena/archive/5794eed1a04a44a34c4f58b95f8c68bd17bb0534.tar.gz",
+            .hash = "12201dfdbed459399f3afb2b08d955cbe05824646960d8b5642efec2fdb5e8ed127b",
         },
         .@"SPIRV-Tools" = .{
             .url = "https://github.com/hexops/spirv-tools/archive/4dad52926d917c7e714511af554038e2f7ddfa09.tar.gz",
