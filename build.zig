@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const use_lld = true;
+    const use_lld = builtin.os.tag != .macos;
     const use_llvm = true;
 
     const lib = b.addStaticLibrary(.{

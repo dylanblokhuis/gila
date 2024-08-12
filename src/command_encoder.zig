@@ -40,7 +40,6 @@ const ResourceTracker = struct {
         buffer: Gc.BufferHandle,
     };
 
-    // stage_mask: vk.PipelineStageFlags2,
     resources: std.AutoArrayHashMap(ResourceId, Resource),
 
     pub fn init(allocator: std.mem.Allocator) !ResourceTracker {
@@ -403,7 +402,7 @@ pub fn startGraphicsPass(self: *Self, desc: GraphicsPassDesc) !GraphicsPass {
     const pipeline: Gc.GraphicsPipeline = self.gc.graphics_pipelines.get(desc.pipeline).?;
     self.gc.device.cmdBindPipeline(self.getCommandBuffer(), .graphics, pipeline.pipeline);
 
-    var color_rendering_attachments = self.gc.allocator.alloc(vk.RenderingAttachmentInfo, desc.color_attachments.len) catch unreachable;
+    var color_rendering_attachments = try self.getArena().alloc(vk.RenderingAttachmentInfo, desc.color_attachments.len);
 
     var render_area: ?vk.Rect2D = null;
 
