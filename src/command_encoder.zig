@@ -84,6 +84,8 @@ pub fn init(
     gc: *Gc,
     options: CommandEncoderOptions,
 ) !Self {
+    std.log.debug("Creating command encoder with {d} frames in flight", .{options.max_inflight});
+
     const pool = try gc.device.createCommandPool(&vk.CommandPoolCreateInfo{
         .flags = .{ .reset_command_buffer_bit = true },
         .queue_family_index = gc.graphics_queue.family,

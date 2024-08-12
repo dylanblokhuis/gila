@@ -19,20 +19,25 @@ handle: vk.SwapchainKHR,
 swap_images: []SwapImage,
 image_index: u32,
 next_image_acquired: vk.Semaphore,
+options: Options,
 
-pub fn init(gc: *Gc, extent: vk.Extent2D) !Self {
-    return try initRecycle(gc, extent, .null_handle);
+const Options = struct {
+    present_mode: vk.PresentModeKHR = .fifo_khr,
+};
+
+pub fn init(gc: *Gc, extent: vk.Extent2D, options: Options) !Self {
+    return try initRecycle(gc, extent, options, .null_handle);
 }
 
-pub fn initRecycle(gc: *Gc, extent: vk.Extent2D, old_handle: vk.SwapchainKHR) !Self {
+pub fn initRecycle(gc: *Gc, extent: vk.Extent2D, options: Options, old_handle: vk.SwapchainKHR) !Self {
     const caps = try gc.instance.getPhysicalDeviceSurfaceCapabilitiesKHR(gc.physical_device, gc.surface);
     const actual_extent = findActualExtent(caps, extent);
     if (actual_extent.width == 0 or actual_extent.height == 0) {
         return error.InvalidSurfaceDimensions;
     }
 
-    const surface_format = try findSurfaceFormat(gc, gc.allocator);
-    const present_mode = try findPresentMode(gc, gc.allocator);
+    const surface_format = try findSurfaceFormat(gc);
+    const present_mode = try findPresentMode(gc, options.present_mode);
 
     var image_count = caps.min_image_count + 1;
     if (caps.max_image_count > 0) {
@@ -92,6 +97,7 @@ pub fn initRecycle(gc: *Gc, extent: vk.Extent2D, old_handle: vk.SwapchainKHR) !S
         .swap_images = swap_images,
         .image_index = result.image_index,
         .next_image_acquired = next_image_acquired,
+        .options = options,
     };
 }
 
@@ -113,7 +119,7 @@ pub fn deinit(self: Self) void {
 pub fn recreate(self: *Self, new_extent: vk.Extent2D) !void {
     const old_handle = self.handle;
     self.deinitExceptSwapchain();
-    self.* = try initRecycle(self.gc, new_extent, old_handle);
+    self.* = try initRecycle(self.gc, new_extent, self.options, old_handle);
 }
 
 pub fn currentImage(self: Self) vk.Image {
@@ -250,14 +256,14 @@ fn initSwapchainImages(gc: *Gc, swapchain: vk.SwapchainKHR, format: vk.Format, a
     return swap_images;
 }
 
-fn findSurfaceFormat(gc: *Gc, allocator: Allocator) !vk.SurfaceFormatKHR {
+fn findSurfaceFormat(gc: *Gc) !vk.SurfaceFormatKHR {
     const preferred = vk.SurfaceFormatKHR{
         .format = .b8g8r8a8_srgb,
         .color_space = .srgb_nonlinear_khr,
     };
 
-    const surface_formats = try gc.instance.getPhysicalDeviceSurfaceFormatsAllocKHR(gc.physical_device, gc.surface, allocator);
-    defer allocator.free(surface_formats);
+    const surface_formats = try gc.instance.getPhysicalDeviceSurfaceFormatsAllocKHR(gc.physical_device, gc.surface, gc.allocator);
+    defer gc.allocator.free(surface_formats);
 
     for (surface_formats) |sfmt| {
         if (std.meta.eql(sfmt, preferred)) {
@@ -268,13 +274,14 @@ fn findSurfaceFormat(gc: *Gc, allocator: Allocator) !vk.SurfaceFormatKHR {
     return surface_formats[0]; // There must always be at least one supported surface format
 }
 
-fn findPresentMode(gc: *Gc, allocator: Allocator) !vk.PresentModeKHR {
-    const present_modes = try gc.instance.getPhysicalDeviceSurfacePresentModesAllocKHR(gc.physical_device, gc.surface, allocator);
-    defer allocator.free(present_modes);
+fn findPresentMode(gc: *Gc, preferred_present_mode: vk.PresentModeKHR) !vk.PresentModeKHR {
+    const present_modes = try gc.instance.getPhysicalDeviceSurfacePresentModesAllocKHR(gc.physical_device, gc.surface, gc.allocator);
+    defer gc.allocator.free(present_modes);
 
     const preferred = [_]vk.PresentModeKHR{
-        .mailbox_khr,
-        .immediate_khr,
+        preferred_present_mode,
+        // .mailbox_khr,
+        // .immediate_khr,
     };
 
     for (preferred) |mode| {

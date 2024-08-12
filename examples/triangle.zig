@@ -49,7 +49,9 @@ pub fn main() !void {
     }
 
     var gc = try Gc.init(std.heap.c_allocator, "gila", window.?);
-    var swapchain = try Gc.Swapchain.init(&gc, extent);
+    var swapchain = try Gc.Swapchain.init(&gc, extent, .{
+        .present_mode = .mailbox_khr,
+    });
 
     const vertex_shader = try gc.createShader(.{
         .data = .{ .path = "./raster.slang" },
@@ -104,7 +106,6 @@ pub fn main() !void {
     });
 
     const storage_texture = try gc.createSwapchainSizedStorageTexture(&swapchain, .r8g8b8a8_unorm);
-
     var encoder = try CommandEncoder.init(&gc, .{
         .max_inflight = swapchain.swap_images.len,
     });
@@ -124,12 +125,6 @@ pub fn main() !void {
 
     {
         try encoder.reset();
-        encoder.bufferBarrier(vertex_buffer, .{
-            .new_access_mask = .{ .transfer_write_bit = true },
-            .new_stage_mask = .{
-                .top_of_pipe_bit = true,
-            },
-        });
         try encoder.writeBuffer(vertex_buffer, std.mem.sliceAsBytes(&Triangle));
         encoder.bufferBarrier(vertex_buffer, .{
             .new_access_mask = .{ .vertex_attribute_read_bit = true },
