@@ -40,7 +40,6 @@ const ResourceTracker = struct {
         buffer: Gc.BufferHandle,
     };
 
-    // stage_mask: vk.PipelineStageFlags2,
     resources: std.AutoArrayHashMap(ResourceId, Resource),
 
     pub fn init(allocator: std.mem.Allocator) !ResourceTracker {
@@ -218,11 +217,17 @@ pub fn submitAndPresent(self: *Self, swapchain: *Gc.Swapchain) !Gc.Swapchain.Pre
             .base_array_layer = 0,
             .layer_count = 1,
         },
-        .src_stage_mask = .{},
-        .dst_stage_mask = .{},
+        .src_stage_mask = .{
+            .all_transfer_bit = true,
+        },
+        .dst_stage_mask = .{
+            .bottom_of_pipe_bit = true,
+        },
         .old_layout = .transfer_dst_optimal,
         .new_layout = .present_src_khr,
-        .src_access_mask = .{},
+        .src_access_mask = .{
+            .transfer_write_bit = true,
+        },
         .dst_access_mask = .{},
         .src_queue_family_index = self.gc.graphics_queue.family,
         .dst_queue_family_index = self.gc.present_queue.family,
@@ -403,7 +408,7 @@ pub fn startGraphicsPass(self: *Self, desc: GraphicsPassDesc) !GraphicsPass {
     const pipeline: Gc.GraphicsPipeline = self.gc.graphics_pipelines.get(desc.pipeline).?;
     self.gc.device.cmdBindPipeline(self.getCommandBuffer(), .graphics, pipeline.pipeline);
 
-    var color_rendering_attachments = self.gc.allocator.alloc(vk.RenderingAttachmentInfo, desc.color_attachments.len) catch unreachable;
+    var color_rendering_attachments = try self.getArena().alloc(vk.RenderingAttachmentInfo, desc.color_attachments.len);
 
     var render_area: ?vk.Rect2D = null;
 
@@ -917,7 +922,9 @@ pub fn imageBarrier(self: *Self, image: Gc.TextureHandle, info: CreateImageBarri
 }
 
 pub const CreateBufferBarrierInfo = struct {
-    new_stage_mask: vk.PipelineStageFlags2 = .{},
+    new_stage_mask: vk.PipelineStageFlags2 = .{
+        .top_of_pipe_bit = true,
+    },
     new_access_mask: vk.AccessFlags2 = .{},
     queue_family_index: u32 = vk.QUEUE_FAMILY_IGNORED,
 };

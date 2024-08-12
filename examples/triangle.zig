@@ -126,14 +126,16 @@ pub fn main() !void {
         try encoder.reset();
         encoder.bufferBarrier(vertex_buffer, .{
             .new_access_mask = .{ .transfer_write_bit = true },
-            .new_stage_mask = .{ .all_transfer_bit = true },
+            .new_stage_mask = .{
+                .top_of_pipe_bit = true,
+            },
         });
         try encoder.writeBuffer(vertex_buffer, std.mem.sliceAsBytes(&Triangle));
         encoder.bufferBarrier(vertex_buffer, .{
             .new_access_mask = .{ .vertex_attribute_read_bit = true },
             .new_stage_mask = .{ .vertex_attribute_input_bit = true },
         });
-        try encoder.submitBlocking();
+        try encoder.submit();
     }
 
     while (c.glfwWindowShouldClose(window) == 0) {
