@@ -191,13 +191,17 @@ pub fn compileToSpv(
     const entry_point_index = spAddEntryPoint(req, translation_index, entrypoint, stage);
 
     const res = spCompile(req);
-    if (!res.hasSucceeded()) {
+    if (res.hasFailed()) {
         return error.FailedToCompileShader;
     }
 
     var size_out: usize = undefined;
     const ptr = spGetEntryPointCode(req, entry_point_index, &size_out);
     const bytes: [*]u8 = @ptrCast(ptr);
+
+    if (size_out == 0) {
+        return error.FailedToCompileShader;
+    }
 
     return try allocator.dupe(u8, bytes[0..size_out]);
 }

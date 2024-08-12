@@ -245,14 +245,14 @@ pub fn submitAndPresent(self: *Self, swapchain: *Gc.Swapchain) !Gc.Swapchain.Pre
 }
 
 /// queues a buffer for deletion after the end of the frame
-fn queueDestroyBuffer(self: *Self, index: Gc.BufferPool.Index) void {
+pub fn queueDestroyBuffer(self: *Self, index: Gc.BufferPool.Index) void {
     self.delete_queues[self.current_frame_index].append(self.gc.allocator, .{
         .buffer = index,
     }) catch unreachable;
 }
 
 /// queues a texture for deletion after the end of the frame
-fn queueDestroyTexture(self: *Self, index: Gc.TexturePool.Index) void {
+pub fn queueDestroyTexture(self: *Self, index: Gc.TexturePool.Index) void {
     self.delete_queues[self.current_frame_index].append(self.gc.allocator, .{
         .texture = index,
     }) catch unreachable;
@@ -349,6 +349,16 @@ const GraphicsPass = struct {
         self.vertex_buffer_count += 1;
     }
 
+    pub fn setIndexBuffer(self: *GraphicsPass, buffer: Gc.BufferHandle, index_type: vk.IndexType) void {
+        const vk_handle = self.encoder.gc.buffers.getField(buffer, .buffer).?;
+        self.encoder.gc.device.cmdBindIndexBuffer(
+            self.encoder.getCommandBuffer(),
+            vk_handle,
+            0,
+            index_type,
+        );
+    }
+
     const DrawInfo = struct {
         vertex_count: u32,
         instance_count: u32 = 1,
@@ -368,7 +378,7 @@ const GraphicsPass = struct {
     const DrawIndexedInfo = struct {
         index_count: u32,
         instance_count: u32 = 1,
-        first_index: u32 = 0,
+        index_offset: u32 = 0,
         vertex_offset: i32 = 0,
         first_instance: u32 = 0,
     };
@@ -377,7 +387,7 @@ const GraphicsPass = struct {
             self.encoder.getCommandBuffer(),
             info.index_count,
             info.instance_count,
-            info.first_index,
+            info.index_offset,
             info.vertex_offset,
             info.first_instance,
         );
@@ -724,11 +734,11 @@ const Bindless = struct {
 
         const binding_flags = vk.DescriptorSetLayoutBindingFlagsCreateInfo{
             .p_binding_flags = &[BINDING_COUNT]vk.DescriptorBindingFlags{
-                vk.DescriptorBindingFlags{ .partially_bound_bit = true },
-                vk.DescriptorBindingFlags{ .partially_bound_bit = true },
-                vk.DescriptorBindingFlags{ .partially_bound_bit = true },
-                vk.DescriptorBindingFlags{ .partially_bound_bit = true },
-                vk.DescriptorBindingFlags{ .partially_bound_bit = true },
+                vk.DescriptorBindingFlags{ .partially_bound_bit = true, .update_after_bind_bit = true },
+                vk.DescriptorBindingFlags{ .partially_bound_bit = true, .update_after_bind_bit = true },
+                vk.DescriptorBindingFlags{ .partially_bound_bit = true, .update_after_bind_bit = true },
+                vk.DescriptorBindingFlags{ .partially_bound_bit = true, .update_after_bind_bit = true },
+                vk.DescriptorBindingFlags{ .partially_bound_bit = true, .update_after_bind_bit = true },
             },
         };
 
@@ -741,7 +751,9 @@ const Bindless = struct {
         const set_layout = try gc.device.createDescriptorSetLayout(&.{
             .binding_count = bindings.len,
             .p_bindings = &bindings,
-            .flags = .{},
+            .flags = .{
+                .update_after_bind_pool_bit = true,
+            },
             .p_next = @ptrCast(&binding_flags),
         }, null);
 
@@ -752,7 +764,9 @@ const Bindless = struct {
                 .pool_size_count = pool_sizes.len,
                 .p_pool_sizes = &pool_sizes,
                 .max_sets = 1,
-                .flags = .{},
+                .flags = .{
+                    .update_after_bind_bit = true,
+                },
             }, null);
 
             try gc.device.allocateDescriptorSets(&.{
@@ -770,70 +784,78 @@ const Bindless = struct {
         };
     }
 
+    fn getWriteData(self: *Bindless, gc: *Gc, arena: std.mem.Allocator, set: vk.DescriptorSet, desc: BoundDescriptor) !?vk.WriteDescriptorSet {
+        _ = self; // autofix
+        const enu = std.meta.activeTag(desc);
+
+        const index = switch (desc) {
+            .sampler => unreachable,
+            .uniform_buffer => |h| h.index,
+            .storage_buffer => |h| h.index,
+            .sampled_image => |h| h.index,
+            .storage_image => |h| h.index,
+        };
+
+        var image_info = std.ArrayList(vk.DescriptorImageInfo).init(arena);
+        var buffer_info = std.ArrayList(vk.DescriptorBufferInfo).init(arena);
+
+        switch (desc) {
+            .sampler => unreachable,
+            .sampled_image => |handle| {
+                const texture = gc.textures.get(handle) orelse return null;
+                try image_info.append(vk.DescriptorImageInfo{
+                    .sampler = .null_handle,
+                    .image_view = texture.view,
+                    .image_layout = vk.ImageLayout.shader_read_only_optimal,
+                });
+            },
+            .storage_image => |handle| {
+                const texture = gc.textures.get(handle) orelse return null;
+                try image_info.append(vk.DescriptorImageInfo{
+                    .sampler = .null_handle,
+                    .image_view = texture.view,
+                    .image_layout = vk.ImageLayout.general,
+                });
+            },
+            .uniform_buffer => |handle| {
+                const buffer = gc.buffers.get(handle) orelse return null;
+                try buffer_info.append(vk.DescriptorBufferInfo{
+                    .buffer = buffer.buffer,
+                    .offset = 0,
+                    .range = vk.WHOLE_SIZE,
+                });
+            },
+            .storage_buffer => |handle| {
+                const buffer = gc.buffers.get(handle) orelse return null;
+                try buffer_info.append(vk.DescriptorBufferInfo{
+                    .buffer = buffer.buffer,
+                    .offset = 0,
+                    .range = vk.WHOLE_SIZE,
+                });
+            },
+        }
+
+        return vk.WriteDescriptorSet{
+            .dst_set = set,
+            .dst_binding = @intFromEnum(desc),
+            .dst_array_element = index,
+            .descriptor_type = enu.toDescriptorType(),
+            .descriptor_count = 1,
+            .p_image_info = image_info.items.ptr,
+            .p_buffer_info = buffer_info.items.ptr,
+            .p_texel_buffer_view = &[0]vk.BufferView{},
+        };
+    }
+
     pub fn updateDescriptorSet(self: *Bindless, gc: *Gc, set: vk.DescriptorSet, arena: std.mem.Allocator) !void {
         var writes = std.ArrayList(vk.WriteDescriptorSet).init(arena);
 
         for (self.bound_descriptors.items) |desc| {
-            const enu = std.meta.activeTag(desc);
+            const maybe_write = try self.getWriteData(gc, arena, set, desc);
 
-            // const enu = desc.
-            const index = switch (desc) {
-                .sampler => unreachable,
-                .uniform_buffer => |h| h.index,
-                .storage_buffer => |h| h.index,
-                .sampled_image => |h| h.index,
-                .storage_image => |h| h.index,
-            };
-
-            var image_info = std.ArrayList(vk.DescriptorImageInfo).init(arena);
-            var buffer_info = std.ArrayList(vk.DescriptorBufferInfo).init(arena);
-
-            switch (desc) {
-                .sampler => unreachable,
-                .sampled_image => |handle| {
-                    const texture = gc.textures.get(handle).?;
-                    try image_info.append(vk.DescriptorImageInfo{
-                        .sampler = .null_handle,
-                        .image_view = texture.view,
-                        .image_layout = vk.ImageLayout.shader_read_only_optimal,
-                    });
-                },
-                .storage_image => |handle| {
-                    const texture = gc.textures.get(handle).?;
-                    try image_info.append(vk.DescriptorImageInfo{
-                        .sampler = .null_handle,
-                        .image_view = texture.view,
-                        .image_layout = vk.ImageLayout.general,
-                    });
-                },
-                .uniform_buffer => |handle| {
-                    const buffer = gc.buffers.get(handle).?;
-                    try buffer_info.append(vk.DescriptorBufferInfo{
-                        .buffer = buffer.buffer,
-                        .offset = 0,
-                        .range = vk.WHOLE_SIZE,
-                    });
-                },
-                .storage_buffer => |handle| {
-                    const buffer = gc.buffers.get(handle).?;
-                    try buffer_info.append(vk.DescriptorBufferInfo{
-                        .buffer = buffer.buffer,
-                        .offset = 0,
-                        .range = vk.WHOLE_SIZE,
-                    });
-                },
+            if (maybe_write) |write| {
+                try writes.append(write);
             }
-
-            try writes.append(vk.WriteDescriptorSet{
-                .dst_set = set,
-                .dst_binding = @intFromEnum(desc),
-                .dst_array_element = index,
-                .descriptor_type = enu.toDescriptorType(),
-                .descriptor_count = 1,
-                .p_image_info = image_info.items.ptr,
-                .p_buffer_info = buffer_info.items.ptr,
-                .p_texel_buffer_view = &[0]vk.BufferView{},
-            });
         }
 
         gc.device.updateDescriptorSets(@intCast(writes.items.len), writes.items.ptr, 0, null);
@@ -842,6 +864,18 @@ const Bindless = struct {
 
 pub fn addToBindless(self: *Self, desc: Bindless.BoundDescriptor) !void {
     try self.bindless.bound_descriptors.append(desc);
+}
+
+/// Instantly writes the resource to the bindless descriptor set, with no bookkeeping.
+///
+/// Use this when you need to bind a resource and access it in the same frame.
+pub fn writeToBindless(self: *Self, desc: Bindless.BoundDescriptor) !void {
+    self.gc.device.updateDescriptorSets(
+        @intCast(1),
+        @ptrCast(&try self.bindless.getWriteData(self.gc, self.getArena(), self.getBindlessDescriptorSet(), desc)),
+        0,
+        null,
+    );
 }
 
 pub fn getBindlessDescriptorSet(self: *Self) vk.DescriptorSet {
@@ -890,6 +924,20 @@ pub fn writeBuffer(self: *Self, buffer: Gc.BufferHandle, data: []const u8) !void
 //
 //
 
+pub fn fullBarrierDebug(self: *Self) void {
+    const memorybarrier = vk.MemoryBarrier2{
+        .src_stage_mask = .{ .all_commands_bit = true },
+        .src_access_mask = .{ .memory_read_bit = true, .memory_write_bit = true },
+        .dst_stage_mask = .{ .all_commands_bit = true },
+        .dst_access_mask = .{ .memory_read_bit = true, .memory_write_bit = true },
+    };
+
+    self.gc.device.cmdPipelineBarrier2(self.getCommandBuffer(), &.{
+        .memory_barrier_count = 1,
+        .p_memory_barriers = @ptrCast(&memorybarrier),
+    });
+}
+
 const CreateImageBarrierInfo = struct {
     new_stage_mask: vk.PipelineStageFlags2 = .{},
     new_access_mask: vk.AccessFlags2 = .{},
@@ -932,28 +980,36 @@ pub const CreateBufferBarrierInfo = struct {
 };
 
 pub fn bufferBarrier(self: *Self, buffer: Gc.BufferHandle, info: CreateBufferBarrierInfo) void {
-    const current_status = self.tracker.getBuffer(buffer);
-    const vk_buffer = self.gc.buffers.getField(buffer, .buffer).?;
-    const barrier = vk.BufferMemoryBarrier2{
-        .buffer = vk_buffer,
-        .offset = 0,
-        .size = vk.WHOLE_SIZE,
-        .src_stage_mask = current_status.current_stage,
-        .dst_stage_mask = info.new_stage_mask,
-        .src_access_mask = current_status.current_access,
-        .dst_access_mask = info.new_access_mask,
-        .src_queue_family_index = current_status.current_queue_family,
-        .dst_queue_family_index = info.queue_family_index,
-    };
+    return self.bufferBarriers(&.{buffer}, info);
+}
+
+pub fn bufferBarriers(self: *Self, buffers: []const Gc.BufferHandle, info: CreateBufferBarrierInfo) void {
+    const barriers = self.getArena().alloc(vk.BufferMemoryBarrier2, buffers.len) catch unreachable;
+    for (buffers, 0..) |buffer, i| {
+        const current_status = self.tracker.getBuffer(buffer);
+        const vk_buffer = self.gc.buffers.getField(buffer, .buffer).?;
+        barriers[i] = vk.BufferMemoryBarrier2{
+            .buffer = vk_buffer,
+            .offset = 0,
+            .size = vk.WHOLE_SIZE,
+            .src_stage_mask = current_status.current_stage,
+            .dst_stage_mask = info.new_stage_mask,
+            .src_access_mask = current_status.current_access,
+            .dst_access_mask = info.new_access_mask,
+            .src_queue_family_index = current_status.current_queue_family,
+            .dst_queue_family_index = info.queue_family_index,
+        };
+        current_status.* = .{
+            .current_access = info.new_access_mask,
+            .current_stage = info.new_stage_mask,
+            .current_queue_family = info.queue_family_index,
+        };
+    }
+
     self.gc.device.cmdPipelineBarrier2(self.getCommandBuffer(), &.{
-        .buffer_memory_barrier_count = 1,
-        .p_buffer_memory_barriers = @ptrCast(&barrier),
+        .buffer_memory_barrier_count = @intCast(buffers.len),
+        .p_buffer_memory_barriers = barriers.ptr,
     });
-    current_status.* = .{
-        .current_access = info.new_access_mask,
-        .current_stage = info.new_stage_mask,
-        .current_queue_family = info.queue_family_index,
-    };
 }
 
 //
