@@ -1,12 +1,11 @@
 const std = @import("std");
-const c = @import("gila").c;
+const glfw = @import("gila").glfw;
 const slang = @import("gila").slang;
 const Gc = @import("gila");
 const CommandEncoder = @import("gila").CommandEncoder;
 
-fn errorCallback(err: c_int, desc: [*c]const u8) callconv(.C) void {
-    _ = err; // autofix
-    std.debug.print("glfw err: {s}", .{desc});
+fn glfwErrorCallback(error_code: glfw.ErrorCode, description: [:0]const u8) void {
+    std.debug.print("glfw err: {} {s}\n", .{ error_code, description });
 }
 
 pub const Vertex = packed struct {
@@ -30,25 +29,26 @@ const Triangle = [_]Vertex{
 };
 
 pub fn main() !void {
-    _ = c.glfwSetErrorCallback(errorCallback);
-    if (c.glfwInit() == 0) {
+    _ = glfw.setErrorCallback(glfwErrorCallback);
+    if (!glfw.init(.{})) {
         std.debug.panic("failed to initialize GLFW", .{});
     }
-    defer c.glfwTerminate();
+    defer glfw.terminate();
 
-    c.glfwWindowHint(c.GLFW_CLIENT_API, c.GLFW_NO_API);
     const extent = Gc.vk.Extent2D{
         .width = 1280,
         .height = 720,
     };
-    const window = c.glfwCreateWindow(extent.width, extent.height, "gila", null, null);
-    defer c.glfwDestroyWindow(window);
+    const window = glfw.Window.create(extent.width, extent.height, "gila", null, null, .{
+        .client_api = .no_api,
+    }).?;
+    defer window.destroy();
 
-    if (c.glfwVulkanSupported() == 0) {
+    if (!glfw.vulkanSupported()) {
         std.debug.panic("GLFW: Vulkan not supported", .{});
     }
 
-    var gc = try Gc.init(std.heap.c_allocator, "gila", window.?);
+    var gc = try Gc.init(std.heap.c_allocator, "gila", window);
     var swapchain = try Gc.Swapchain.init(&gc, extent, .{
         .present_mode = .mailbox_khr,
     });
@@ -133,14 +133,11 @@ pub fn main() !void {
         try encoder.submit();
     }
 
-    while (c.glfwWindowShouldClose(window) == 0) {
-        var w: c_int = undefined;
-        var h: c_int = undefined;
-        c.glfwGetFramebufferSize(window, &w, &h);
-
+    while (!window.shouldClose()) {
+        const size = window.getFramebufferSize();
         // Don't present or resize swapchain while the window is minimized
-        if (w == 0 or h == 0) {
-            c.glfwPollEvents();
+        if (size.width == 0 or size.height == 0) {
+            glfw.pollEvents();
             continue;
         }
 
@@ -206,13 +203,13 @@ pub fn main() !void {
         encoder.blitToSurface(&swapchain, storage_texture);
 
         const state = try encoder.submitAndPresent(&swapchain);
-        if (state == .suboptimal or swapchain.extent.width != @as(u32, @intCast(w)) or swapchain.extent.height != @as(u32, @intCast(h))) {
+        if (state == .suboptimal or swapchain.extent.width != size.width or swapchain.extent.height != size.height) {
             try swapchain.recreate(.{
-                .width = @intCast(w),
-                .height = @intCast(h),
+                .width = size.width,
+                .height = size.height,
             });
         }
 
-        c.glfwPollEvents();
+        glfw.pollEvents();
     }
 }

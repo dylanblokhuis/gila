@@ -31,9 +31,9 @@
             .url = "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/871913da6a4b132b567d7b65c509600363c0041e.tar.gz",
             .hash = "1220d892aba15212af57966f784bb9e667aad52d60ce384b47bbb5db9315f7dd4265",
         },
-        .glfw = .{
-            .url = "https://github.com/hexops/glfw/archive/e6f377baed70a7bef9fa08d808f40b64c5136bf6.tar.gz",
-            .hash = "1220c15e66c13f9633fcfd50b5ed265f74f2950c98b1f1defd66298fa027765e0190",
+        .@"mach-glfw" = .{
+            .url = "https://github.com/dylanblokhuis/mach-glfw/archive/8f557fa8856dc2f1616f143a081d108fd1cf014f.tar.gz",
+            .hash = "12204504ca07da9de0b4c8f110020b76bf6da25306e7d9ba91f7b4663724f477ef9a",
         },
         .@"generational-arena" = .{
             .url = "https://github.com/dylanblokhuis/generational-arena/archive/5794eed1a04a44a34c4f58b95f8c68bd17bb0534.tar.gz",

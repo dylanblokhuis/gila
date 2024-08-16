@@ -15,15 +15,10 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const use_lld = builtin.os.tag != .macos;
-    const use_llvm = true;
-
     const lib = b.addStaticLibrary(.{
-        .name = "gila",
+        .name = "gila-deps",
         .target = target,
         .optimize = optimize,
-        .use_lld = use_lld,
-        .use_llvm = use_llvm,
     });
 
     lib.linkLibC();
@@ -37,10 +32,11 @@ pub fn build(b: *std.Build) !void {
     // compile VMA from git
     {
         const vma_dep = b.dependency("vma", .{});
-        lib.addIncludePath(vma_dep.path("include"));
+        // lib.addIncludePath(vma_dep.path("include"));
         lib.addCSourceFile(.{ .file = b.path("src/vk_mem_alloc.cpp") });
         lib.defineCMacro("VMA_STATIC_VULKAN_FUNCTIONS", "false");
         lib.installHeader(vma_dep.path("include/vk_mem_alloc.h"), "vk_mem_alloc.h");
+        lib.addIncludePath(vma_dep.path("include"));
     }
 
     // compile SPIRV-reflect from git
@@ -50,16 +46,6 @@ pub fn build(b: *std.Build) !void {
             .file = spirvr_dep.path("spirv_reflect.c"),
         });
         lib.installHeadersDirectory(spirvr_dep.path(""), "spirv_reflect", .{});
-    }
-
-    // add glfw
-    {
-        const glfw = b.dependency("glfw", .{
-            .target = target,
-            .optimize = optimize,
-        });
-        lib.linkLibrary(glfw.artifact("glfw"));
-        lib.installHeadersDirectory(glfw.path("include/GLFW"), "GLFW", .{});
     }
 
     // add spirv-tools
@@ -100,6 +86,12 @@ pub fn build(b: *std.Build) !void {
     });
     mod.addImport("generational-arena", generational_arena.module("generational-arena"));
 
+    const glfw = b.dependency("mach-glfw", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    mod.addImport("mach-glfw", glfw.module("mach-glfw"));
+
     // zig build generate-vk
     {
         const registry = vk_headers.path("registry/vk.xml").getPath(b);
@@ -116,17 +108,17 @@ pub fn build(b: *std.Build) !void {
     {
         const triangle = b.addExecutable(.{
             .name = "triangle",
-            .root_source_file = b.path("examples/triangle.zig"),
+            .root_source_file = b.path("src/examples/triangle.zig"),
             .target = target,
             .optimize = optimize,
-            .use_lld = use_lld,
-            .use_llvm = use_llvm,
         });
-        triangle.root_module.addImport("gila", mod);
-        triangle.addIncludePath(lib.getEmittedIncludeTree());
 
-        const build_step = b.step("build-example-triangle", "Build the triangle example");
-        build_step.dependOn(&triangle.step);
+        triangle.root_module.addImport("gila", mod);
+        // required for ZLS, imports are unused
+        triangle.root_module.addImport("mach-glfw", glfw.module("mach-glfw"));
+        triangle.root_module.addImport("generational-arena", generational_arena.module("generational-arena"));
+        // ZLS will know where to find the headers
+        triangle.addIncludePath(lib.getEmittedIncludeTree());
 
         const run_cmd = b.addRunArtifact(triangle);
         const run_step = b.step("run-example-triangle", "Run the triangle example");

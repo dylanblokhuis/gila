@@ -1,6 +1,7 @@
 pub const c = @import("c.zig");
 pub const slang = @import("slang.zig");
 pub const vk = @import("vk.zig");
+pub const glfw = @import("mach-glfw");
 
 pub const Swapchain = @import("swapchain.zig");
 pub const Shader = @import("shader.zig");
@@ -105,7 +106,7 @@ compute_pipelines: ComputePipelinePool = .{},
 textures: TexturePool = .{},
 buffers: BufferPool = .{},
 
-pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: *c.GLFWwindow) !Self {
+pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window) !Self {
     var instance_extensions = std.ArrayList([*c]const u8).init(allocator);
     defer instance_extensions.deinit();
 
@@ -119,14 +120,13 @@ pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: *c.GLFWwindow
     }
 
     const base = try BaseDispatch.load(struct {
-        fn getInstanceProcAddress(instance: vk.Instance, name: [*:0]const u8) c.GLFWglproc {
-            return c.glfwGetInstanceProcAddress(@ptrFromInt(@intFromEnum(instance)), name);
+        fn getInstanceProcAddress(instance: vk.Instance, name: [*:0]const u8) ?glfw.VKProc {
+            return glfw.getInstanceProcAddress(@ptrFromInt(@intFromEnum(instance)), name);
         }
     }.getInstanceProcAddress);
 
-    var glfw_exts_count: u32 = 0;
-    const glfw_exts = c.glfwGetRequiredInstanceExtensions(&glfw_exts_count);
-    try instance_extensions.appendSlice(glfw_exts[0..glfw_exts_count]);
+    const glfw_exts = glfw.getRequiredInstanceExtensions();
+    try instance_extensions.appendSlice(glfw_exts.?);
 
     const app_info = vk.ApplicationInfo{
         .p_application_name = app_name,
@@ -152,7 +152,7 @@ pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: *c.GLFWwindow
     const instance = Instance.init(vk_instance, instance_dispatch);
 
     var c_surface: c.VkSurfaceKHR = undefined;
-    if (c.glfwCreateWindowSurface(@ptrFromInt(@intFromEnum(vk_instance)), window, null, &c_surface) != @intFromEnum(vk.Result.success)) {
+    if (glfw.createWindowSurface(vk_instance, window, null, &c_surface) != @intFromEnum(vk.Result.success)) {
         return error.SurfaceInitFailed;
     }
     const surface: vk.SurfaceKHR = @enumFromInt(@intFromPtr(c_surface));
