@@ -6,7 +6,7 @@ const vk = Gc.vk;
 const Self = @This();
 
 buffer: vk.Buffer,
-// address: usize,
+address: usize,
 allocation: c.VmaAllocation,
 usage: vk.BufferUsageFlags,
 
@@ -15,6 +15,7 @@ pub const CreateInfo = struct {
     size: u64 = 0,
     usage: vk.BufferUsageFlags,
     location: MemoryLocation = .auto,
+    dedicated: bool = false,
 };
 
 pub const MemoryLocation = enum(c_uint) {
@@ -34,7 +35,9 @@ pub fn create(gc: *Gc, desc: CreateInfo) !Self {
     const buffer_info = c.VkBufferCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = desc.size,
-        .usage = desc.usage.toInt(),
+        .usage = desc.usage.merge(.{
+            .shader_device_address_bit = true,
+        }).toInt(),
         .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
     };
 
@@ -47,6 +50,10 @@ pub fn create(gc: *Gc, desc: CreateInfo) !Self {
         .transfer_src_bit = true,
     })) {
         flags |= c.VMA_ALLOCATION_CREATE_MAPPED_BIT | c.VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    }
+
+    if (desc.dedicated) {
+        flags |= c.VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     }
 
     const alloc_create_info = c.VmaAllocationCreateInfo{
@@ -70,15 +77,14 @@ pub fn create(gc: *Gc, desc: CreateInfo) !Self {
         },
     }
 
-    // const addr = gc.device.getBufferDeviceAddress(&.{
-    //     .buffer = @enumFromInt(@intFromPtr(buffer)),
-    // });
-    // _ = addr; // autofix
+    const addr = gc.device.getBufferDeviceAddress(&.{
+        .buffer = @enumFromInt(@intFromPtr(buffer)),
+    });
 
     return Self{
         .buffer = @enumFromInt(@intFromPtr(buffer)),
         .allocation = allocation,
-        // .address = addr,
+        .address = addr,
         .usage = desc.usage,
     };
 }

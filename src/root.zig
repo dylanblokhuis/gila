@@ -37,9 +37,13 @@ const apis: []const vk.ApiInfo = &.{
     vk.extensions.khr_surface,
     vk.extensions.khr_swapchain,
     vk.extensions.ext_debug_utils,
+    vk.extensions.khr_acceleration_structure,
+    vk.extensions.khr_deferred_host_operations,
 };
 pub const required_device_extensions = [_][*:0]const u8{
     vk.extensions.khr_swapchain.name,
+    vk.extensions.khr_acceleration_structure.name,
+    vk.extensions.khr_deferred_host_operations.name,
 };
 pub const required_instance_extensions = [_][*:0]const u8{
     vk.extensions.ext_debug_utils.name,
@@ -177,11 +181,13 @@ pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window) 
             .vkGetInstanceProcAddr = @ptrCast(base.dispatch.vkGetInstanceProcAddr),
             .vkGetDeviceProcAddr = @ptrCast(instance.wrapper.dispatch.vkGetDeviceProcAddr),
         },
-        .flags = c.VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT | c.VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT,
+        .flags = c.VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT | c.VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT | c.VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
         .vulkanApiVersion = c.VK_API_VERSION_1_3,
     }, &vma) != c.VK_SUCCESS) {
         return error.VmaInitFailed;
     }
+
+    // c.vmaCreatePool(allocator: VmaAllocator, pCreateInfo: [*c]const VmaPoolCreateInfo, pPool: [*c]VmaPool)
 
     const messenger = try instance.createDebugUtilsMessengerEXT(&vk.DebugUtilsMessengerCreateInfoEXT{
         .message_severity = vk.DebugUtilsMessageSeverityFlagsEXT{
@@ -379,3 +385,7 @@ pub fn createBufferWithCopy(self: *Self, create_desc: Buffer.CreateInfo, copy_in
 
     return try self.buffers.append(self.allocator, buffer);
 }
+
+// pub fn createVmaPool(self: *Self, pool_info: c.VmaPoolCreateInfo) !void {
+
+// }

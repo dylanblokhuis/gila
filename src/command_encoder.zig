@@ -140,7 +140,7 @@ pub fn init(
     };
 }
 
-inline fn getCommandBuffer(self: *Self) vk.CommandBuffer {
+pub inline fn getCommandBuffer(self: *Self) vk.CommandBuffer {
     if (self.current_frame_index >= self.command_buffers.len) {
         std.debug.panic("Must reset command encoder before using it", .{});
     }

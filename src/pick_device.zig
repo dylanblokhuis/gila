@@ -33,7 +33,13 @@ pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.D
         .shader_storage_image_read_without_format = vk.TRUE,
     };
 
+    var as_ext = vk.PhysicalDeviceAccelerationStructureFeaturesKHR{
+        .acceleration_structure = vk.TRUE,
+        // .descriptor_binding_acceleration_structure_update_after_bind = vk.TRUE,
+    };
+
     var vulkan_1_2_features = vk.PhysicalDeviceVulkan12Features{
+        .buffer_device_address = vk.TRUE,
         // features needed for bindless
         .descriptor_indexing = vk.TRUE,
         .shader_input_attachment_array_dynamic_indexing = vk.TRUE,
@@ -56,6 +62,7 @@ pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.D
         .descriptor_binding_partially_bound = vk.TRUE,
         .descriptor_binding_variable_descriptor_count = vk.TRUE,
         .runtime_descriptor_array = vk.TRUE,
+        .p_next = &as_ext,
     };
 
     const vulkan_1_3_features = vk.PhysicalDeviceVulkan13Features{
