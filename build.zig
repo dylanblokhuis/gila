@@ -15,10 +15,16 @@ pub fn build(b: *std.Build) !void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addStaticLibrary(.{
+    const shared = b.option(bool, "shared", "Build as a shared library") orelse false;
+
+    const lib = std.Build.Step.Compile.create(b, .{
         .name = "gila-deps",
-        .target = target,
-        .optimize = optimize,
+        .kind = .lib,
+        .linkage = if (shared) .dynamic else .static,
+        .root_module = .{
+            .target = target,
+            .optimize = optimize,
+        },
     });
 
     lib.linkLibC();
@@ -28,6 +34,7 @@ pub fn build(b: *std.Build) !void {
     // add vulkan headers
     lib.installHeadersDirectory(vk_headers.path("include/vulkan"), "vulkan", .{});
     lib.installHeadersDirectory(vk_headers.path("include/vk_video"), "vk_video", .{});
+    lib.addIncludePath(vk_headers.path("include"));
 
     // compile VMA from git
     {
