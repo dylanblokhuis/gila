@@ -40,8 +40,8 @@
             .hash = "12201dfdbed459399f3afb2b08d955cbe05824646960d8b5642efec2fdb5e8ed127b",
         },
         .@"SPIRV-Tools" = .{
-            .url = "https://github.com/hexops/spirv-tools/archive/4dad52926d917c7e714511af554038e2f7ddfa09.tar.gz",
-            .hash = "1220b3b094e64cb8d084fa5991fcaa63ce98e8327d9f312bbe1c639dcec1f7fd457f",
+            .url = "https://github.com/dylanblokhuis/spirv-tools/archive/030c16f56e4d87b0ffa652debed5e0995c9c14c6.tar.gz",
+            .hash = "12200ef8919fc0d08e4cdca1801307a7c40ecfe21288b6e695cf15e61bfe9ddc07ae",
         },
     },
     .paths = .{

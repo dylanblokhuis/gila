@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) !void {
     const lib = std.Build.Step.Compile.create(b, .{
         .name = "gila-deps",
         .kind = .lib,
-        .linkage = if (shared) .dynamic else .static,
+        .linkage = .static,
         .root_module = .{
             .target = target,
             .optimize = optimize,
@@ -55,16 +55,13 @@ pub fn build(b: *std.Build) !void {
         lib.installHeadersDirectory(spirvr_dep.path(""), "spirv_reflect", .{});
     }
 
-    // add spirv-tools
-    {
-        const spvtools = b.dependency("SPIRV-Tools", .{
-            .target = target,
-            .optimize = optimize,
-        });
-
-        lib.linkLibrary(spvtools.artifact("spirv-opt"));
-        lib.installHeadersDirectory(spvtools.path("include/spirv-tools"), "spirv-tools", .{});
-    }
+    // add spirv-tools, we could build this as shared, so we need to link it to the module directly
+    const spvtools = b.dependency("SPIRV-Tools", .{
+        .target = target,
+        .optimize = optimize,
+        .shared = shared,
+    });
+    lib.installHeadersDirectory(spvtools.path("include/spirv-tools"), "spirv-tools", .{});
 
     // add slang
     const slang_link_path: ?std.Build.LazyPath = blk: {
@@ -98,6 +95,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
     mod.addImport("mach-glfw", glfw.module("mach-glfw"));
+    mod.linkLibrary(spvtools.artifact("spirvopt"));
 
     // zig build generate-vk
     {
@@ -127,9 +125,13 @@ pub fn build(b: *std.Build) !void {
         // ZLS will know where to find the headers
         triangle.addIncludePath(lib.getEmittedIncludeTree());
 
+        const build_step = b.step("build-example-triangle", "Build the triangle example");
+        build_step.dependOn(&triangle.step);
+
         const run_cmd = b.addRunArtifact(triangle);
         const run_step = b.step("run-example-triangle", "Run the triangle example");
         run_step.dependOn(&run_cmd.step);
+        run_cmd.step.dependOn(b.getInstallStep());
 
         b.installArtifact(triangle);
     }
