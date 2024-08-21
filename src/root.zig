@@ -11,6 +11,7 @@ pub const GraphicsPipeline = @import("graphics_pipeline.zig");
 pub const ComputePipeline = @import("compute_pipeline.zig");
 pub const CommandEncoder = @import("command_encoder.zig");
 const MultiArenaUnmanaged = @import("generational-arena").MultiArenaUnmanaged;
+const ArenaUnmanaged = @import("generational-arena").ArenaUnmanaged;
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -87,6 +88,9 @@ pub const TextureHandle = TexturePool.Index;
 pub const BufferPool = MultiArenaUnmanaged(Buffer, u16, u16);
 pub const BufferHandle = BufferPool.Index;
 
+pub const VmaPools = ArenaUnmanaged(c.VmaPool, u8, u8);
+pub const VmaPoolHandle = VmaPools.Index;
+
 // pub const PrependDescriptorSet = struct { layout: vk.DescriptorSetLayout };
 
 allocator: Allocator,
@@ -109,6 +113,7 @@ graphics_pipelines: GraphicsPipelinePool = .{},
 compute_pipelines: ComputePipelinePool = .{},
 textures: TexturePool = .{},
 buffers: BufferPool = .{},
+vma_pools: VmaPools = .{},
 
 pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window) !Self {
     var instance_extensions = std.ArrayList([*c]const u8).init(allocator);
@@ -386,6 +391,47 @@ pub fn createBufferWithCopy(self: *Self, create_desc: Buffer.CreateInfo, copy_in
     return try self.buffers.append(self.allocator, buffer);
 }
 
-// pub fn createVmaPool(self: *Self, pool_info: c.VmaPoolCreateInfo) !void {
+const VmaPoolOptions = struct {
+    block_size: usize,
+    max_block_count: u32,
+    min_block_count: u32 = 0,
+    min_allocation_alignment: usize = 0,
+    priority: f32 = 0,
+    is_linear: bool = false,
+};
 
-// }
+pub fn createVmaPool(self: *Self, options: VmaPoolOptions, sample_buffer_usage: vk.BufferUsageFlags) !VmaPoolHandle {
+    const sample_info = c.VmaAllocationCreateInfo{
+        .usage = c.VMA_MEMORY_USAGE_AUTO,
+    };
+
+    const sample_buffer_info = c.VkBufferCreateInfo{
+        .sType = c.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = 1024,
+        .usage = sample_buffer_usage.toInt(),
+        .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
+    };
+
+    var mem_type_index: u32 = undefined;
+    if (c.vmaFindMemoryTypeIndexForBufferInfo(self.vma, &sample_buffer_info, &sample_info, &mem_type_index) != c.VK_SUCCESS) {
+        return error.VmaMemoryTypeIndexNotFound;
+    }
+
+    // Create a pool that can have at most 2 blocks, 128 MiB each.
+    const pool_create_info = c.VmaPoolCreateInfo{
+        .memoryTypeIndex = mem_type_index,
+        .blockSize = options.block_size,
+        .maxBlockCount = options.max_block_count,
+        .minBlockCount = options.min_block_count,
+        .minAllocationAlignment = options.min_allocation_alignment,
+        .priority = options.priority,
+        .flags = if (options.is_linear) c.VMA_POOL_CREATE_LINEAR_ALGORITHM_BIT else 0,
+    };
+
+    var pool: c.VmaPool = undefined;
+    if (c.vmaCreatePool(self.vma, &pool_create_info, &pool) != c.VK_SUCCESS) {
+        return error.VmaPoolCreationFailed;
+    }
+
+    return try self.vma_pools.append(self.allocator, pool);
+}

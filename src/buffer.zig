@@ -16,6 +16,7 @@ pub const CreateInfo = struct {
     usage: vk.BufferUsageFlags,
     location: MemoryLocation = .auto,
     dedicated: bool = false,
+    pool: ?Gc.VmaPoolHandle = null,
 };
 
 pub const MemoryLocation = enum(c_uint) {
@@ -56,9 +57,15 @@ pub fn create(gc: *Gc, desc: CreateInfo) !Self {
         flags |= c.VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     }
 
+    const vma_pool: ?c.VmaPool = if (desc.pool != null)
+        gc.vma_pools.getUnchecked(desc.pool.?)
+    else
+        null;
+
     const alloc_create_info = c.VmaAllocationCreateInfo{
         .flags = flags,
         .usage = @intFromEnum(desc.location),
+        .pool = if (vma_pool != null) vma_pool.? else std.mem.zeroes(c.VmaPool),
     };
     var alloc_info: c.VmaAllocationInfo = undefined;
     const result: vk.Result = @enumFromInt(c.vmaCreateBuffer(

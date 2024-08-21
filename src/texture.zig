@@ -23,6 +23,7 @@ pub const CreateInfo = struct {
     format: vk.Format,
     usage: vk.ImageUsageFlags,
     dedicated: bool = false,
+    pool: ?Gc.VmaPoolHandle = null,
 };
 
 pub fn create(gc: *Gc, desc: CreateInfo) !Self {
@@ -52,11 +53,16 @@ pub fn create(gc: *Gc, desc: CreateInfo) !Self {
     var image: c.VkImage = undefined;
     var allocation: c.VmaAllocation = undefined;
 
+    const vma_pool: ?c.VmaPool = if (desc.pool != null)
+        gc.vma_pools.getUnchecked(desc.pool.?)
+    else
+        null;
+
     // https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/usage_patterns.html
     const alloc_info = c.VmaAllocationCreateInfo{
         .usage = c.VMA_MEMORY_USAGE_AUTO,
         .flags = if (desc.dedicated) c.VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT else 0,
-        .priority = 1.0,
+        .pool = if (vma_pool != null) vma_pool.? else std.mem.zeroes(c.VmaPool),
     };
 
     const result: vk.Result = @enumFromInt(c.vmaCreateImage(gc.vma, &image_create_info, &alloc_info, &image, &allocation, null));
