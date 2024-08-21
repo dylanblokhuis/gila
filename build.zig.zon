@@ -32,8 +32,8 @@
             .hash = "1220d892aba15212af57966f784bb9e667aad52d60ce384b47bbb5db9315f7dd4265",
         },
         .@"mach-glfw" = .{
-            .url = "https://github.com/dylanblokhuis/mach-glfw/archive/8f557fa8856dc2f1616f143a081d108fd1cf014f.tar.gz",
-            .hash = "12204504ca07da9de0b4c8f110020b76bf6da25306e7d9ba91f7b4663724f477ef9a",
+            .url = "https://github.com/dylanblokhuis/mach-glfw/archive/2c9bc60e714c727dd9c166afa1c3482875fc91fe.tar.gz",
+            .hash = "12208691d725f1c14401cbbb510f1bee9ad18e7c9872c5111deb4effc0484178739c",
         },
         .@"generational-arena" = .{
             .url = "https://github.com/dylanblokhuis/generational-arena/archive/5794eed1a04a44a34c4f58b95f8c68bd17bb0534.tar.gz",
