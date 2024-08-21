@@ -626,6 +626,7 @@ const Bindless = struct {
         storage_buffer = 2,
         sampled_image = 3,
         storage_image = 4,
+        acceleration_structure = 5,
 
         pub fn toDescriptorType(self: DescriptorTypes) vk.DescriptorType {
             switch (self) {
@@ -634,6 +635,7 @@ const Bindless = struct {
                 .storage_buffer => return vk.DescriptorType.storage_buffer,
                 .sampled_image => return vk.DescriptorType.sampled_image,
                 .storage_image => return vk.DescriptorType.storage_image,
+                .acceleration_structure => return vk.DescriptorType.acceleration_structure_khr,
             }
         }
     };
@@ -645,6 +647,7 @@ const Bindless = struct {
         storage_buffer: Gc.BufferHandle,
         sampled_image: Gc.TextureHandle,
         storage_image: Gc.TextureHandle,
+        acceleration_structure: vk.AccelerationStructureKHR,
     };
 
     set_layout: vk.DescriptorSetLayout,
@@ -680,11 +683,10 @@ const Bindless = struct {
                 .type = vk.DescriptorType.storage_image,
                 .descriptor_count = storage_image_count,
             },
-
-            // vk.DescriptorPoolSize{
-            //     .type = vk.DescriptorType.acceleration_structure_khr,
-            //     .descriptor_count = 1,
-            // },
+            vk.DescriptorPoolSize{
+                .type = vk.DescriptorType.acceleration_structure_khr,
+                .descriptor_count = 1,
+            },
         };
 
         const bindings = [BINDING_COUNT]vk.DescriptorSetLayoutBinding{
@@ -723,17 +725,18 @@ const Bindless = struct {
                 .stage_flags = vk.ShaderStageFlags.fromInt(2147483647),
                 .p_immutable_samplers = null,
             },
-            // vk.DescriptorSetLayoutBinding{
-            //     .binding = AccelerationStructureBinding,
-            //     .descriptor_count = 1,
-            //     .descriptor_type = vk.DescriptorType.acceleration_structure_khr,
-            //     .stage_flags = vk.ShaderStageFlags.fromInt(2147483647),
-            //     .p_immutable_samplers = null,
-            // },
+            vk.DescriptorSetLayoutBinding{
+                .binding = 5,
+                .descriptor_count = 1,
+                .descriptor_type = vk.DescriptorType.acceleration_structure_khr,
+                .stage_flags = vk.ShaderStageFlags.fromInt(2147483647),
+                .p_immutable_samplers = null,
+            },
         };
 
         const binding_flags = vk.DescriptorSetLayoutBindingFlagsCreateInfo{
             .p_binding_flags = &[BINDING_COUNT]vk.DescriptorBindingFlags{
+                vk.DescriptorBindingFlags{ .partially_bound_bit = true, .update_after_bind_bit = true },
                 vk.DescriptorBindingFlags{ .partially_bound_bit = true, .update_after_bind_bit = true },
                 vk.DescriptorBindingFlags{ .partially_bound_bit = true, .update_after_bind_bit = true },
                 vk.DescriptorBindingFlags{ .partially_bound_bit = true, .update_after_bind_bit = true },
@@ -794,10 +797,12 @@ const Bindless = struct {
             .storage_buffer => |h| h.index,
             .sampled_image => |h| h.index,
             .storage_image => |h| h.index,
+            .acceleration_structure => 0,
         };
 
         var image_info = std.ArrayList(vk.DescriptorImageInfo).init(arena);
         var buffer_info = std.ArrayList(vk.DescriptorBufferInfo).init(arena);
+        var accel_info: ?*vk.WriteDescriptorSetAccelerationStructureKHR = null;
 
         switch (desc) {
             .sampler => unreachable,
@@ -833,6 +838,16 @@ const Bindless = struct {
                     .range = vk.WHOLE_SIZE,
                 });
             },
+            .acceleration_structure => |structure| {
+                const ptrs = try arena.alloc(vk.AccelerationStructureKHR, 1);
+                ptrs[0] = structure;
+
+                accel_info = try arena.create(vk.WriteDescriptorSetAccelerationStructureKHR);
+                accel_info.?.* = vk.WriteDescriptorSetAccelerationStructureKHR{
+                    .acceleration_structure_count = @intCast(ptrs.len),
+                    .p_acceleration_structures = ptrs.ptr,
+                };
+            },
         }
 
         return vk.WriteDescriptorSet{
@@ -844,6 +859,7 @@ const Bindless = struct {
             .p_image_info = image_info.items.ptr,
             .p_buffer_info = buffer_info.items.ptr,
             .p_texel_buffer_view = &[0]vk.BufferView{},
+            .p_next = if (accel_info != null) accel_info.? else null,
         };
     }
 
@@ -923,6 +939,25 @@ pub fn writeBuffer(self: *Self, buffer: Gc.BufferHandle, data: []const u8) !void
 // Barriers
 //
 //
+const MemoryBarrierInput = struct {
+    src_stage_mask: vk.PipelineStageFlags2,
+    src_access_mask: vk.AccessFlags2,
+    dst_stage_mask: vk.PipelineStageFlags2,
+    dst_access_mask: vk.AccessFlags2,
+};
+pub fn memoryBarrier(self: *Self, input: MemoryBarrierInput) void {
+    const memorybarrier = vk.MemoryBarrier2{
+        .src_stage_mask = input.src_stage_mask,
+        .src_access_mask = input.src_access_mask,
+        .dst_stage_mask = input.dst_stage_mask,
+        .dst_access_mask = input.dst_access_mask,
+    };
+
+    self.gc.device.cmdPipelineBarrier2(self.getCommandBuffer(), &.{
+        .memory_barrier_count = 1,
+        .p_memory_barriers = @ptrCast(&memorybarrier),
+    });
+}
 
 pub fn fullBarrierDebug(self: *Self) void {
     const memorybarrier = vk.MemoryBarrier2{

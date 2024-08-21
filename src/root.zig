@@ -40,11 +40,13 @@ const apis: []const vk.ApiInfo = &.{
     vk.extensions.ext_debug_utils,
     vk.extensions.khr_acceleration_structure,
     vk.extensions.khr_deferred_host_operations,
+    vk.extensions.khr_ray_query,
 };
 pub const required_device_extensions = [_][*:0]const u8{
     vk.extensions.khr_swapchain.name,
     vk.extensions.khr_acceleration_structure.name,
     vk.extensions.khr_deferred_host_operations.name,
+    vk.extensions.khr_ray_query.name,
 };
 pub const required_instance_extensions = [_][*:0]const u8{
     vk.extensions.ext_debug_utils.name,
@@ -392,8 +394,8 @@ pub fn createBufferWithCopy(self: *Self, create_desc: Buffer.CreateInfo, copy_in
 }
 
 const VmaPoolOptions = struct {
-    block_size: usize,
-    max_block_count: u32,
+    block_size: usize = 0,
+    max_block_count: u32 = 0,
     min_block_count: u32 = 0,
     min_allocation_alignment: usize = 0,
     priority: f32 = 0,
