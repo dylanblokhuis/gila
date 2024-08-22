@@ -33,9 +33,19 @@ pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.D
         .shader_storage_image_read_without_format = vk.TRUE,
     };
 
+    var ray_tracing_pipeline_ext = vk.PhysicalDeviceRayTracingPipelineFeaturesKHR{
+        .ray_tracing_pipeline = vk.TRUE,
+    };
+
+    var ray_query_ext = vk.PhysicalDeviceRayQueryFeaturesKHR{
+        .ray_query = vk.TRUE,
+        .p_next = &ray_tracing_pipeline_ext,
+    };
+
     var as_ext = vk.PhysicalDeviceAccelerationStructureFeaturesKHR{
         .acceleration_structure = vk.TRUE,
         // .descriptor_binding_acceleration_structure_update_after_bind = vk.TRUE,
+        .p_next = &ray_query_ext,
     };
 
     var vulkan_1_2_features = vk.PhysicalDeviceVulkan12Features{

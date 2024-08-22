@@ -40,12 +40,14 @@ const apis: []const vk.ApiInfo = &.{
     vk.extensions.ext_debug_utils,
     vk.extensions.khr_acceleration_structure,
     vk.extensions.khr_deferred_host_operations,
+    vk.extensions.khr_ray_tracing_pipeline,
     vk.extensions.khr_ray_query,
 };
 pub const required_device_extensions = [_][*:0]const u8{
     vk.extensions.khr_swapchain.name,
     vk.extensions.khr_acceleration_structure.name,
     vk.extensions.khr_deferred_host_operations.name,
+    vk.extensions.khr_ray_tracing_pipeline.name,
     vk.extensions.khr_ray_query.name,
 };
 pub const required_instance_extensions = [_][*:0]const u8{
@@ -291,6 +293,7 @@ pub fn createSwapchainSizedColorAttachment(self: *Self, swapchain: *const Swapch
             .color_attachment_bit = true,
             .transfer_src_bit = true,
             .sampled_bit = true,
+            .storage_bit = true,
         },
     });
     return try self.textures.append(self.allocator, tex);
