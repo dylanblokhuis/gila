@@ -547,10 +547,6 @@ pub const ComputePass = struct {
         data: []const u8,
         offset: u32,
     ) void {
-        // data must be a multiple of 16 bytes
-        if (data.len % 16 != 0) {
-            std.debug.panic("Push constant data must be a multiple of 16 bytes", .{});
-        }
         const layout = self.encoder.gc.compute_pipelines.getField(self.desc.pipeline, .layout).?;
         self.encoder.gc.device.cmdPushConstants(
             self.encoder.getCommandBuffer(),

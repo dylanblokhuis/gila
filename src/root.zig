@@ -440,3 +440,36 @@ pub fn createVmaPool(self: *Self, options: VmaPoolOptions, sample_buffer_usage: 
 
     return try self.vma_pools.append(self.allocator, pool);
 }
+
+/// This function will make sure that the input type is properly aligned to prevent any misalignment issues
+pub fn toGpuBytes(input: anytype) []const u8 {
+    const T: std.builtin.Type = @typeInfo(@TypeOf(input));
+
+    if (T != .Pointer) {
+        @compileError("toGpuBytes only supports pointers");
+    }
+
+    const ChildT: std.builtin.Type = @typeInfo(std.meta.Child(@TypeOf(input)));
+    const StructT = switch (ChildT) {
+        .Array => @typeInfo(ChildT.Array.child),
+        else => ChildT,
+    };
+    if (StructT != .Struct) {
+        @compileError("toGpuBytes only supports structs");
+    }
+    if (StructT.Struct.layout != .@"extern") {
+        @compileError("toGpuBytes only supports extern structs");
+    }
+
+    // check if all fields are align(1)
+    inline for (StructT.Struct.fields) |field| {
+        if (field.alignment != 1) {
+            @compileError("toGpuBytes only supports structs with align(1) fields");
+        }
+        if (@typeInfo(field.type) == .Vector) {
+            @compileError("toGpuBytes does not support vectors, the compiler will not align them properly");
+        }
+    }
+
+    return if (T.Pointer.size == .Slice) std.mem.sliceAsBytes(input) else std.mem.asBytes(input);
+}

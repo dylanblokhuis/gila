@@ -8,9 +8,9 @@ fn glfwErrorCallback(error_code: glfw.ErrorCode, description: [:0]const u8) void
     std.debug.print("glfw err: {} {s}\n", .{ error_code, description });
 }
 
-pub const Vertex = packed struct {
-    position: @Vector(2, f32),
-    color: @Vector(3, f32),
+pub const Vertex = extern struct {
+    position: [2]f32 align(1),
+    color: [3]f32 align(1),
 };
 
 const Triangle = [_]Vertex{
@@ -125,7 +125,7 @@ pub fn main() !void {
 
     {
         try encoder.reset();
-        try encoder.writeBuffer(vertex_buffer, std.mem.sliceAsBytes(&Triangle));
+        try encoder.writeBuffer(vertex_buffer, Gc.toGpuBytes(&Triangle));
         encoder.bufferBarrier(vertex_buffer, .{
             .new_access_mask = .{ .vertex_attribute_read_bit = true },
             .new_stage_mask = .{ .vertex_attribute_input_bit = true },

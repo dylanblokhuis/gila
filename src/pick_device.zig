@@ -31,6 +31,9 @@ pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.D
         .fill_mode_non_solid = vk.TRUE,
         .shader_storage_image_write_without_format = vk.TRUE,
         .shader_storage_image_read_without_format = vk.TRUE,
+        .shader_int_64 = vk.TRUE,
+        .shader_int_16 = vk.TRUE,
+        .shader_float_64 = vk.TRUE,
     };
 
     var ray_tracing_pipeline_ext = vk.PhysicalDeviceRayTracingPipelineFeaturesKHR{
@@ -72,6 +75,8 @@ pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.D
         .descriptor_binding_partially_bound = vk.TRUE,
         .descriptor_binding_variable_descriptor_count = vk.TRUE,
         .runtime_descriptor_array = vk.TRUE,
+        .shader_float_16 = vk.TRUE,
+        .shader_int_8 = vk.TRUE,
         .p_next = &as_ext,
     };
 
