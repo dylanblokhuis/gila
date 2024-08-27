@@ -92,7 +92,6 @@ pub fn main() !void {
             },
         },
     });
-    _ = triangle_pipeline; // autofix
 
     // _ = compute_pipeline; // autofix
 
@@ -134,6 +133,11 @@ pub fn main() !void {
     }
 
     while (!window.shouldClose()) {
+        if (window.getKey(.F1) == .press) {
+            try gc.reloadGraphicsPipeline(triangle_pipeline);
+            try gc.reloadComputePipeline(compute_pipeline);
+        }
+
         const size = window.getFramebufferSize();
         // Don't present or resize swapchain while the window is minimized
         if (size.width == 0 or size.height == 0) {

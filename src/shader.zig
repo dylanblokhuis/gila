@@ -9,7 +9,7 @@ module: vk.ShaderModule,
 kind: Kind,
 entry_point: [:0]const u8,
 spirv: []const u8,
-path: ?[]const u8 = null,
+path: ?[:0]const u8 = null,
 
 pub const SpirvReflect = struct {
     sets: []vk.DescriptorSet,
@@ -68,7 +68,7 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
     return Self{
         .module = shader_module,
         // slang converts the entrypoint to main?
-        .entry_point = "main",
+        .entry_point = desc.entry_point,
         .kind = desc.kind,
         .spirv = spirv,
         .path = switch (desc.data) {
@@ -80,9 +80,13 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
 
 pub fn destroy(self: *Self, gc: *Gc) void {
     gc.device.destroyShaderModule(self.module, null);
-    gc.device.destroyPipelineLayout(self.layout, null);
-    gc.device.destroyDescriptorPool(self.pool, null);
     gc.allocator.free(self.spirv);
+}
+
+pub fn getEntryPoint(self: *const Self) [:0]const u8 {
+    _ = self; // autofix
+    // slang converts the entrypoint to "main"
+    return "main";
 }
 
 /// TODO: vertex descriptors

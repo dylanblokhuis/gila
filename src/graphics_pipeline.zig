@@ -400,7 +400,7 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
     var shader_used_for_reflection = &vertex_shader;
 
     stages.buffer[0] = .{
-        .p_name = vertex_shader.entry_point,
+        .p_name = vertex_shader.getEntryPoint(),
         .module = vertex_shader.module,
         .stage = vk.ShaderStageFlags{
             .vertex_bit = true,
@@ -409,7 +409,7 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
     if (desc.fragment != null) {
         var fragment_shader = gc.shaders.get(desc.fragment.?.shader).?;
         stages.buffer[1] = .{
-            .p_name = fragment_shader.entry_point,
+            .p_name = fragment_shader.getEntryPoint(),
             .module = fragment_shader.module,
             .stage = vk.ShaderStageFlags{
                 .fragment_bit = true,
@@ -492,6 +492,11 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
 
 pub fn destroy(self: *Self, gc: *Gc) void {
     gc.device.destroyPipeline(self.pipeline, null);
+    gc.device.destroyPipelineLayout(self.layout, null);
+    if (self.pool) |pool| {
+        gc.device.destroyDescriptorPool(pool, null);
+        gc.allocator.free(self.sets);
+    }
 }
 
 // const UpdateDescriptor = union(enum) {

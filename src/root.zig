@@ -97,6 +97,9 @@ pub const VmaPoolHandle = VmaPools.Index;
 
 // pub const PrependDescriptorSet = struct { layout: vk.DescriptorSetLayout };
 
+const GraphicsPipelineCreationTracker = std.AutoHashMapUnmanaged(GraphicsPipelineHandle, GraphicsPipeline.CreateInfo);
+const ComputePipelineCreationTracker = std.AutoHashMapUnmanaged(ComputePipelineHandle, ComputePipeline.CreateInfo);
+
 allocator: Allocator,
 base: BaseDispatch,
 device: Device,
@@ -118,6 +121,8 @@ compute_pipelines: ComputePipelinePool = .{},
 textures: TexturePool = .{},
 buffers: BufferPool = .{},
 vma_pools: VmaPools = .{},
+graphics_pipeline_creation_tracker: GraphicsPipelineCreationTracker = .{},
+compute_pipeline_creation_tracker: ComputePipelineCreationTracker = .{},
 
 pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window) !Self {
     var instance_extensions = std.ArrayList([*c]const u8).init(allocator);
@@ -261,12 +266,28 @@ pub fn createShader(self: *Self, create: Shader.CreateInfo) !ShaderPool.Index {
 
 pub fn createGraphicsPipeline(self: *Self, create: GraphicsPipeline.CreateInfo) !GraphicsPipelinePool.Index {
     const pipeline = try GraphicsPipeline.create(self, create);
-    return try self.graphics_pipelines.append(self.allocator, pipeline);
+    const handle = try self.graphics_pipelines.append(self.allocator, pipeline);
+    try self.graphics_pipeline_creation_tracker.put(self.allocator, handle, create);
+    return handle;
+}
+
+pub fn destroyGraphicsPipeline(self: *Self, handle: GraphicsPipelineHandle) void {
+    var inner = self.graphics_pipelines.remove(handle).?;
+    inner.destroy(self);
+    self.graphics_pipeline_creation_tracker.remove(handle);
 }
 
 pub fn createComputePipeline(self: *Self, create: ComputePipeline.CreateInfo) !ComputePipelinePool.Index {
     const pipeline = try ComputePipeline.create(self, create);
-    return try self.compute_pipelines.append(self.allocator, pipeline);
+    const handle = try self.compute_pipelines.append(self.allocator, pipeline);
+    try self.compute_pipeline_creation_tracker.put(self.allocator, handle, create);
+    return handle;
+}
+
+pub fn destroyComputePipeline(self: *Self, handle: ComputePipelineHandle) void {
+    var inner = self.compute_pipelines.remove(handle).?;
+    inner.destroy(self);
+    self.compute_pipeline_creation_tracker.remove(handle);
 }
 
 pub fn createTexture(self: *Self, create: Texture.CreateInfo) !TexturePool.Index {
@@ -472,4 +493,59 @@ pub fn toGpuBytes(input: anytype) []const u8 {
     }
 
     return if (T.Pointer.size == .Slice) std.mem.sliceAsBytes(input) else std.mem.asBytes(input);
+}
+
+/// compiles the shaders and recreates the pipeline, but the handle remains the same
+pub fn reloadGraphicsPipeline(self: *Self, handle: GraphicsPipelineHandle) !void {
+    const create_info = self.graphics_pipeline_creation_tracker.get(handle).?;
+
+    var vertex_shader = self.shaders.get(create_info.vertex.shader).?;
+    if (vertex_shader.path) |path| {
+        const new_shader = try Shader.create(self, .{
+            .data = .{ .path = path },
+            .entry_point = vertex_shader.entry_point,
+            .kind = vertex_shader.kind,
+        });
+        vertex_shader.destroy(self);
+        try self.shaders.set(create_info.vertex.shader, new_shader);
+    }
+
+    if (create_info.fragment) |fragment| {
+        var fragment_shader = self.shaders.get(fragment.shader).?;
+        if (fragment_shader.path) |path| {
+            const new_shader = try Shader.create(self, .{
+                .data = .{ .path = path },
+                .entry_point = fragment_shader.entry_point,
+                .kind = fragment_shader.kind,
+            });
+            fragment_shader.destroy(self);
+            try self.shaders.set(fragment.shader, new_shader);
+        }
+    }
+
+    var old_pipeline = self.graphics_pipelines.get(handle).?;
+    old_pipeline.destroy(self);
+
+    try self.graphics_pipelines.set(handle, try GraphicsPipeline.create(self, create_info));
+}
+
+/// compiles the shader and recreates the pipeline, but the handle remains the same
+pub fn reloadComputePipeline(self: *Self, handle: ComputePipelineHandle) !void {
+    const create_info = self.compute_pipeline_creation_tracker.get(handle).?;
+
+    var shader = self.shaders.get(create_info.shader).?;
+    if (shader.path) |path| {
+        const new_shader = try Shader.create(self, .{
+            .data = .{ .path = path },
+            .entry_point = shader.entry_point,
+            .kind = shader.kind,
+        });
+        shader.destroy(self);
+        try self.shaders.set(create_info.shader, new_shader);
+    }
+
+    var old_pipeline = self.compute_pipelines.get(handle).?;
+    old_pipeline.destroy(self);
+
+    try self.compute_pipelines.set(handle, try ComputePipeline.create(self, create_info));
 }

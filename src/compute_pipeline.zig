@@ -49,7 +49,7 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
         .stage = vk.PipelineShaderStageCreateInfo{
             .stage = .{ .compute_bit = true },
             .module = shader.module,
-            .p_name = shader.entry_point,
+            .p_name = shader.getEntryPoint(),
         },
         .base_pipeline_index = -1,
     };
