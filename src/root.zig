@@ -267,7 +267,17 @@ pub fn createShader(self: *Self, create: Shader.CreateInfo) !ShaderPool.Index {
 pub fn createGraphicsPipeline(self: *Self, create: GraphicsPipeline.CreateInfo) !GraphicsPipelinePool.Index {
     const pipeline = try GraphicsPipeline.create(self, create);
     const handle = try self.graphics_pipelines.append(self.allocator, pipeline);
-    try self.graphics_pipeline_creation_tracker.put(self.allocator, handle, create);
+
+    var create_ref = create;
+    create_ref.vertex.buffer_layout = try self.allocator.dupe(GraphicsPipeline.VertexBufferLayout, create.vertex.buffer_layout);
+    if (create_ref.prepend_descriptor_set_layouts) |slice| {
+        create_ref.prepend_descriptor_set_layouts = try self.allocator.dupe(vk.DescriptorSetLayout, slice);
+    }
+    if (create_ref.fragment) |*fragment| {
+        fragment.color_targets = try self.allocator.dupe(GraphicsPipeline.ColorAttachment, fragment.color_targets);
+    }
+
+    try self.graphics_pipeline_creation_tracker.put(self.allocator, handle, create_ref);
     return handle;
 }
 
@@ -280,7 +290,13 @@ pub fn destroyGraphicsPipeline(self: *Self, handle: GraphicsPipelineHandle) void
 pub fn createComputePipeline(self: *Self, create: ComputePipeline.CreateInfo) !ComputePipelinePool.Index {
     const pipeline = try ComputePipeline.create(self, create);
     const handle = try self.compute_pipelines.append(self.allocator, pipeline);
-    try self.compute_pipeline_creation_tracker.put(self.allocator, handle, create);
+
+    var create_ref = create;
+    if (create_ref.prepend_descriptor_set_layouts) |slice| {
+        create_ref.prepend_descriptor_set_layouts = try self.allocator.dupe(vk.DescriptorSetLayout, slice);
+    }
+
+    try self.compute_pipeline_creation_tracker.put(self.allocator, handle, create_ref);
     return handle;
 }
 
