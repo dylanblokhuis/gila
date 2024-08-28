@@ -9,6 +9,7 @@ buffer: vk.Buffer,
 address: usize,
 allocation: c.VmaAllocation,
 usage: vk.BufferUsageFlags,
+size: vk.DeviceSize,
 
 pub const CreateInfo = struct {
     name: []const u8,
@@ -93,6 +94,7 @@ pub fn create(gc: *Gc, desc: CreateInfo) !Self {
         .allocation = allocation,
         .address = addr,
         .usage = desc.usage,
+        .size = desc.size,
     };
 }
 

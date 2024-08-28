@@ -823,7 +823,7 @@ const Bindless = struct {
                 try buffer_info.append(vk.DescriptorBufferInfo{
                     .buffer = buffer.buffer,
                     .offset = 0,
-                    .range = vk.WHOLE_SIZE,
+                    .range = buffer.size,
                 });
             },
             .storage_buffer => |handle| {
@@ -831,7 +831,7 @@ const Bindless = struct {
                 try buffer_info.append(vk.DescriptorBufferInfo{
                     .buffer = buffer.buffer,
                     .offset = 0,
-                    .range = vk.WHOLE_SIZE,
+                    .range = buffer.size,
                 });
             },
             .acceleration_structure => |structure| {
@@ -1019,10 +1019,11 @@ pub fn bufferBarriers(self: *Self, buffers: []const Gc.BufferHandle, info: Creat
     for (buffers, 0..) |buffer, i| {
         const current_status = self.tracker.getBuffer(buffer);
         const vk_buffer = self.gc.buffers.getField(buffer, .buffer).?;
+        const buffer_size = self.gc.buffers.getField(buffer, .size).?;
         barriers[i] = vk.BufferMemoryBarrier2{
             .buffer = vk_buffer,
             .offset = 0,
-            .size = vk.WHOLE_SIZE,
+            .size = buffer_size,
             .src_stage_mask = current_status.current_stage,
             .dst_stage_mask = info.new_stage_mask,
             .src_access_mask = current_status.current_access,
