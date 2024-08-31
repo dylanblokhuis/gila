@@ -48,7 +48,7 @@ pub fn main() !void {
         std.debug.panic("GLFW: Vulkan not supported", .{});
     }
 
-    var gc = try Gc.init(std.heap.c_allocator, "gila", window);
+    var gc = try Gc.init(std.heap.c_allocator, "gila", window, .{});
     var swapchain = try Gc.Swapchain.init(&gc, extent, .{
         .present_mode = .mailbox_khr,
     });

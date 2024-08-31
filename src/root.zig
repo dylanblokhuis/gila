@@ -100,6 +100,10 @@ pub const VmaPoolHandle = VmaPools.Index;
 const GraphicsPipelineCreationTracker = std.AutoHashMapUnmanaged(GraphicsPipelineHandle, GraphicsPipeline.CreateInfo);
 const ComputePipelineCreationTracker = std.AutoHashMapUnmanaged(ComputePipelineHandle, ComputePipeline.CreateInfo);
 
+const Options = struct {
+    validation_layers: bool = true,
+};
+
 allocator: Allocator,
 base: BaseDispatch,
 device: Device,
@@ -124,7 +128,7 @@ vma_pools: VmaPools = .{},
 graphics_pipeline_creation_tracker: GraphicsPipelineCreationTracker = .{},
 compute_pipeline_creation_tracker: ComputePipelineCreationTracker = .{},
 
-pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window) !Self {
+pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window, options: Options) !Self {
     var instance_extensions = std.ArrayList([*c]const u8).init(allocator);
     defer instance_extensions.deinit();
 
@@ -133,7 +137,7 @@ pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window) 
     var layer_names = std.ArrayList([*:0]const u8).init(allocator);
     defer layer_names.deinit();
 
-    if (builtin.mode == .Debug) {
+    if (options.validation_layers) {
         try layer_names.append("VK_LAYER_KHRONOS_validation");
     }
 
@@ -200,8 +204,6 @@ pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window) 
     }, &vma) != c.VK_SUCCESS) {
         return error.VmaInitFailed;
     }
-
-    // c.vmaCreatePool(allocator: VmaAllocator, pCreateInfo: [*c]const VmaPoolCreateInfo, pPool: [*c]VmaPool)
 
     const messenger = try instance.createDebugUtilsMessengerEXT(&vk.DebugUtilsMessengerCreateInfoEXT{
         .message_severity = vk.DebugUtilsMessageSeverityFlagsEXT{
