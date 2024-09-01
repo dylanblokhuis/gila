@@ -203,6 +203,7 @@ fn checkExtensionSupport(
                 break;
             }
         } else {
+            std.log.err("Missing required device extension: {s}\n", .{ext});
             return false;
         }
     }

@@ -101,7 +101,7 @@ const GraphicsPipelineCreationTracker = std.AutoHashMapUnmanaged(GraphicsPipelin
 const ComputePipelineCreationTracker = std.AutoHashMapUnmanaged(ComputePipelineHandle, ComputePipeline.CreateInfo);
 
 const Options = struct {
-    validation_layers: bool = true,
+    validation_layers: bool = builtin.mode == .Debug,
 };
 
 allocator: Allocator,
