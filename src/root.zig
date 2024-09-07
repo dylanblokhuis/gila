@@ -20,39 +20,9 @@ const Allocator = std.mem.Allocator;
 usingnamespace @import("pick_device.zig");
 
 /// To construct base, instance and device wrappers for vulkan-zig, you need to pass a list of 'apis' to it.
-const apis: []const vk.ApiInfo = &.{
-    // You can either add invidiual functions by manually creating an 'api'
-    .{
-        // .base_commands = .{
-        //     // .createInstance = true,
-        // },
-        // .instance_commands = .{
-        //     .createDebugUtilsMessengerEXT = true,
-        // },
-    },
-    // Or you can add entire feature sets or extensions
-    vk.features.version_1_0,
-    vk.features.version_1_1,
-    vk.features.version_1_2,
-    vk.features.version_1_3,
-    vk.extensions.khr_surface,
-    vk.extensions.khr_swapchain,
-    vk.extensions.ext_debug_utils,
-    vk.extensions.khr_acceleration_structure,
-    vk.extensions.khr_deferred_host_operations,
-    vk.extensions.khr_ray_tracing_pipeline,
-    vk.extensions.khr_ray_query,
-};
-pub const required_device_extensions = [_][*:0]const u8{
-    vk.extensions.khr_swapchain.name,
-    vk.extensions.khr_acceleration_structure.name,
-    vk.extensions.khr_deferred_host_operations.name,
-    vk.extensions.khr_ray_tracing_pipeline.name,
-    vk.extensions.khr_ray_query.name,
-};
-pub const required_instance_extensions = [_][*:0]const u8{
-    vk.extensions.ext_debug_utils.name,
-};
+pub const apis: []const vk.ApiInfo = @import("vk_extensions.zig").apis;
+pub const required_device_extensions = @import("vk_extensions.zig").required_device_extensions;
+pub const required_instance_extensions = @import("vk_extensions.zig").required_instance_extensions;
 
 /// Next, pass the `apis` to the wrappers to create dispatch tables.
 const BaseDispatch = vk.BaseWrapper(apis);
@@ -132,6 +102,13 @@ pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window, 
     var instance_extensions = std.ArrayList([*c]const u8).init(allocator);
     defer instance_extensions.deinit();
 
+    var device_extensions = std.ArrayList([*c]const u8).init(allocator);
+    defer device_extensions.deinit();
+
+    for (required_device_extensions) |ext| {
+        try device_extensions.append(ext);
+    }
+
     try instance_extensions.appendSlice(&required_instance_extensions);
 
     var layer_names = std.ArrayList([*:0]const u8).init(allocator);
@@ -182,7 +159,7 @@ pub fn init(allocator: Allocator, app_name: [*:0]const u8, window: glfw.Window, 
     const candidate = try Self.pickPhysicalDevice(instance, allocator, surface);
     std.log.info("Picking device {s} with support for Vulkan 1.{d}", .{ candidate.props.device_name, vk.apiVersionMinor(candidate.props.api_version) });
 
-    const vk_device = try Self.initializeCandidate(instance, candidate);
+    const vk_device = try Self.initializeCandidate(instance, candidate, device_extensions.items);
     const device_dispatch = try allocator.create(DeviceDispatch);
     device_dispatch.* = try DeviceDispatch.load(vk_device, instance.wrapper.dispatch.vkGetDeviceProcAddr);
     const device = Device.init(vk_device, device_dispatch);

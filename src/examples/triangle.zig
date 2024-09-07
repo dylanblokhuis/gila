@@ -95,8 +95,8 @@ pub fn main() !void {
 
     // _ = compute_pipeline; // autofix
 
-    const texture = try gc.createSwapchainSizedColorAttachment(&swapchain, .r8g8b8a8_srgb);
-    _ = texture; // autofix
+    // const texture = try gc.createSwapchainSizedColorAttachment(&swapchain, .r8g8b8a8_srgb);
+    // _ = texture; // autofix
     const vertex_buffer = try gc.createBuffer(.{
         .location = .prefer_device,
         .size = @sizeOf(Vertex) * 3,

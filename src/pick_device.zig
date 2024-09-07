@@ -7,7 +7,7 @@ const Device = root.Device;
 const required_device_extensions = root.required_device_extensions;
 const vk = root.vk;
 
-pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.Device {
+pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate, device_extensions: [][*c]const u8) !vk.Device {
     const priority = [_]f32{1};
     const qci = [_]vk.DeviceQueueCreateInfo{
         .{
@@ -35,6 +35,11 @@ pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.D
         .shader_int_16 = vk.TRUE,
         .shader_float_64 = vk.TRUE,
     };
+
+    var wants_ray_tracing: bool = false;
+    for (device_extensions) |ext| {
+        wants_ray_tracing = std.mem.eql(u8, vk.extensions.khr_acceleration_structure.name, std.mem.sliceTo(ext, 0));
+    }
 
     var ray_tracing_pipeline_ext = vk.PhysicalDeviceRayTracingPipelineFeaturesKHR{
         .ray_tracing_pipeline = vk.TRUE,
@@ -77,7 +82,7 @@ pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.D
         .runtime_descriptor_array = vk.TRUE,
         .shader_float_16 = vk.TRUE,
         .shader_int_8 = vk.TRUE,
-        .p_next = &as_ext,
+        .p_next = if (wants_ray_tracing) &as_ext else null,
     };
 
     const vulkan_1_3_features = vk.PhysicalDeviceVulkan13Features{
@@ -89,8 +94,8 @@ pub fn initializeCandidate(instance: Instance, candidate: DeviceCandidate) !vk.D
     return try instance.createDevice(candidate.pdev, &.{
         .queue_create_info_count = queue_count,
         .p_queue_create_infos = &qci,
-        .enabled_extension_count = required_device_extensions.len,
-        .pp_enabled_extension_names = @ptrCast(&required_device_extensions),
+        .enabled_extension_count = @intCast(device_extensions.len),
+        .pp_enabled_extension_names = @ptrCast(device_extensions.ptr),
         .p_enabled_features = &physical_device_features,
         .p_next = &vulkan_1_3_features,
     }, null);
