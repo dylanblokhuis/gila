@@ -138,7 +138,7 @@ pub fn build(b: *std.Build) !void {
 }
 
 pub const SlangDownloadOptions = struct {
-    release_version: []const u8 = "167021889",
+    release_version: []const u8 = "173743439",
     download_url: ?[]const u8 = null,
 };
 pub const SlangDownloadBinaryStep = struct {
@@ -282,7 +282,7 @@ pub fn downloadFromBinary(b: *std.Build, step: *std.Build.Step.Compile, options:
             else => return error.UnsupportedTarget,
         },
         .macos => switch (target.cpu.arch) {
-            .x86_64 => "macos-x64",
+            .x86_64 => "macos-x86_64",
             .aarch64 => "macos-aarch64",
             else => return error.UnsupportedTarget,
         },
