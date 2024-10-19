@@ -16,8 +16,8 @@
     // internet connectivity.
     .dependencies = .{
         .vulkan_zig = .{
-            .url = "https://github.com/Snektron/vulkan-zig/archive/66b7b773bb61e2102025f2d5ff0ae8c5f53e19cc.tar.gz",
-            .hash = "12208958f173b8b81bfac797955f0416ab38b21d1f69d4ebf6c7ca460a828a41cd45",
+            .url = "https://github.com/Snektron/vulkan-zig/archive/e43d635893de4c8b89d5ca8aa142984872b7e68f.tar.gz",
+            .hash = "122064f889ea10097a67fc28744fe95d0bfde9af252de147a9b90aa55cecfc30c01c",
         },
         .@"SPIRV-Reflect" = .{
             .url = "https://github.com/KhronosGroup/SPIRV-Reflect/archive/c07ddbd7f3ef6f4be3edcf9a091d745d11bf0e2a.tar.gz",
@@ -32,17 +32,17 @@
             .hash = "1220d892aba15212af57966f784bb9e667aad52d60ce384b47bbb5db9315f7dd4265",
         },
         .@"mach-glfw" = .{
-            .url = "https://github.com/dylanblokhuis/mach-glfw/archive/2c9bc60e714c727dd9c166afa1c3482875fc91fe.tar.gz",
-            .hash = "12208691d725f1c14401cbbb510f1bee9ad18e7c9872c5111deb4effc0484178739c",
+            .url = "https://github.com/castholm/mach-glfw/archive/37478672f127ea0b09197e2eedf44c33e0104f9d.tar.gz",
+            .hash = "122063ff4f78ff0971747c14b06310ac0b8959c4866647e59fb78778cfc4e9bb000b",
         },
         .@"generational-arena" = .{
             .url = "https://github.com/dylanblokhuis/generational-arena/archive/5794eed1a04a44a34c4f58b95f8c68bd17bb0534.tar.gz",
             .hash = "12201dfdbed459399f3afb2b08d955cbe05824646960d8b5642efec2fdb5e8ed127b",
         },
-        .@"SPIRV-Tools" = .{
-            .url = "https://github.com/dylanblokhuis/spirv-tools/archive/030c16f56e4d87b0ffa652debed5e0995c9c14c6.tar.gz",
-            .hash = "12200ef8919fc0d08e4cdca1801307a7c40ecfe21288b6e695cf15e61bfe9ddc07ae",
-        },
+        // .@"SPIRV-Tools" = .{
+        //     .url = "https://github.com/dylanblokhuis/spirv-tools/archive/030c16f56e4d87b0ffa652debed5e0995c9c14c6.tar.gz",
+        //     .hash = "12200ef8919fc0d08e4cdca1801307a7c40ecfe21288b6e695cf15e61bfe9ddc07ae",
+        // },
     },
     .paths = .{
         // This makes *all* files, recursively, included in this package. It is generally
@@ -54,6 +54,7 @@
         "build.zig",
         "build.zig.zon",
         "src",
+        "build",
         "LICENSE",
         "README.md",
     },

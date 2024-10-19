@@ -1,118 +1,5 @@
-//  Severity | Facility | Code
-//     ---------|----------|-----
-//     31       |    30-16 | 15-0
-const SlangResult = packed struct(c_int) {
-    severity: u1,
-    facility: u15,
-    code: u16,
-
-    fn hasFailed(self: SlangResult) bool {
-        return self.severity < 0;
-    }
-
-    fn hasSucceeded(self: SlangResult) bool {
-        return self.severity >= 0;
-    }
-
-    fn getFacility(self: SlangResult) u15 {
-        return self.facility;
-    }
-    fn getCode(self: SlangResult) u16 {
-        return self.code;
-    }
-};
+const c = @import("c.zig");
 const SlangUInt32 = c_uint;
-const SlangInt32 = c_int;
-const SlangInt = c_int;
-const SlangUInt = c_uint;
-const SlangSSizeT = c_int;
-const SlangSizeT = c_uint;
-const SlangBool = bool;
-const SlangSession = opaque {};
-const SlangCompileRequest = opaque {};
-const SlangProfileID = c_uint;
-const SlangReflection = opaque {};
-
-const SlangCompileTarget = enum(c_int) {
-    SLANG_TARGET_UNKNOWN,
-    SLANG_TARGET_NONE,
-    SLANG_GLSL,
-    SLANG_GLSL_VULKAN_DEPRECATED, //< deprecated and removed: just use `SLANG_GLSL`.
-    SLANG_GLSL_VULKAN_ONE_DESC_DEPRECATED, //< deprecated and removed.
-    SLANG_HLSL,
-    SLANG_SPIRV,
-    SLANG_SPIRV_ASM,
-    SLANG_DXBC,
-    SLANG_DXBC_ASM,
-    SLANG_DXIL,
-    SLANG_DXIL_ASM,
-    SLANG_C_SOURCE, //< The C language
-    SLANG_CPP_SOURCE, //< C++ code for shader kernels.
-    SLANG_HOST_EXECUTABLE, //< Standalone binary executable (for hosting CPU/OS)
-    SLANG_SHADER_SHARED_LIBRARY, //< A shared library/Dll for shader kernels (for hosting CPU/OS)
-    SLANG_SHADER_HOST_CALLABLE, //< A CPU target that makes the compiled shader code available to be run immediately
-    SLANG_CUDA_SOURCE, //< Cuda source
-    SLANG_PTX, //< PTX
-    SLANG_CUDA_OBJECT_CODE, //< Object code that contains CUDA functions.
-    SLANG_OBJECT_CODE, //< Object code that can be used for later linking
-    SLANG_HOST_CPP_SOURCE, //< C++ code for host library or executable.
-    SLANG_HOST_HOST_CALLABLE, //< Host callable host code (ie non kernel/shader)
-    SLANG_CPP_PYTORCH_BINDING, //< C++ PyTorch binding code.
-    SLANG_METAL, //< Metal shading language
-    SLANG_METAL_LIB, //< Metal library
-    SLANG_METAL_LIB_ASM, //< Metal library assembly
-    SLANG_HOST_SHARED_LIBRARY, //< A shared library/Dll for host code (for hosting CPU/OS)
-    SLANG_TARGET_COUNT_OF,
-};
-
-const SlangTargetFlags = enum(c_uint) {
-    // When compiling for a D3D Shader Model 5.1 or higher target, allocate
-    //   distinct register spaces for parameter blocks.
-    //
-    //   @deprecated This behavior is now enabled unconditionally.
-    SLANG_TARGET_FLAG_PARAMETER_BLOCKS_USE_REGISTER_SPACES = 1 << 4,
-
-    // When set, will generate target code that contains all entrypoints defined
-    //   in the input source or specified via the `spAddEntryPoint` function in a
-    //   single output module (library/source file).
-    SLANG_TARGET_FLAG_GENERATE_WHOLE_PROGRAM = 1 << 8,
-
-    // When set, will dump out the IR between intermediate compilation steps.
-    SLANG_TARGET_FLAG_DUMP_IR = 1 << 9,
-
-    // When set, will generate SPIRV directly rather than via glslang.
-    SLANG_TARGET_FLAG_GENERATE_SPIRV_DIRECTLY = 1 << 10,
-};
-
-const ShaderCompileFlags = enum(c_uint) {
-    // Do as little mangling of names as possible, to try to preserve original names
-    SLANG_COMPILE_FLAG_NO_MANGLING = 1 << 3,
-
-    // Skip code generation step, just check the code and generate layout
-    SLANG_COMPILE_FLAG_NO_CODEGEN = 1 << 4,
-
-    // Obfuscate shader names on release products
-    SLANG_COMPILE_FLAG_OBFUSCATE = 1 << 5,
-
-    // Deprecated flags: kept around to allow existing applications to
-    // compile. Note that the relevant features will still be left in
-    // their default state.
-    SLANG_COMPILE_FLAG_NO_CHECKING = 0,
-    SLANG_COMPILE_FLAG_SPLIT_MIXED_TYPES = 0,
-};
-
-const SlangSourceLanguage = enum(c_int) {
-    SLANG_SOURCE_LANGUAGE_UNKNOWN,
-    SLANG_SOURCE_LANGUAGE_SLANG,
-    SLANG_SOURCE_LANGUAGE_HLSL,
-    SLANG_SOURCE_LANGUAGE_GLSL,
-    SLANG_SOURCE_LANGUAGE_C,
-    SLANG_SOURCE_LANGUAGE_CPP,
-    SLANG_SOURCE_LANGUAGE_CUDA,
-    SLANG_SOURCE_LANGUAGE_SPIRV,
-    SLANG_SOURCE_LANGUAGE_METAL,
-    SLANG_SOURCE_LANGUAGE_COUNT_OF,
-};
 
 pub const SlangStage = enum(SlangUInt32) {
     SLANG_STAGE_NONE,
@@ -135,75 +22,64 @@ pub const SlangStage = enum(SlangUInt32) {
     // SLANG_STAGE_PIXEL = @intFromEnum(enum_or_tagged_union: anytype).SLANG_STAGE_FRAGMENT,
 };
 
-extern fn spGetBuildTagString() [*c]u8;
-extern fn spCreateSession() *SlangSession;
-extern fn spDestroySession(session: *SlangSession) void;
-
-extern fn spCreateCompileRequest(session: *SlangSession) *SlangCompileRequest;
-extern fn spDestroyCompileRequest(request: *SlangCompileRequest) void;
-
-/// when it returns 0, it means the profile is not found
-extern fn spFindProfile(session: *SlangSession, name: [*c]const u8) SlangProfileID;
-extern fn spSetTargetProfile(request: *SlangCompileRequest, target_index: c_int, profile: SlangProfileID) void;
-
-extern fn spAddCodeGenTarget(request: *SlangCompileRequest, target: SlangCompileTarget) c_int;
-extern fn spSetCodeGenTarget(request: *SlangCompileRequest, target: SlangCompileTarget) void;
-extern fn spSetTargetFlags(request: *SlangCompileRequest, target_index: c_int, flags: SlangTargetFlags) void;
-extern fn spSetTargetForceGLSLScalarBufferLayout(request: *SlangCompileRequest, target_index: c_int, force_scalar_layout: bool) void;
-
-extern fn spAddEntryPoint(request: *SlangCompileRequest, translation_unit_index: c_int, name: [*c]const u8, stage: SlangStage) c_int;
-
-extern fn spSetCompileFlags(request: *SlangCompileRequest, flags: ShaderCompileFlags) void;
-extern fn spGetCompileFlags(request: *SlangCompileRequest) ShaderCompileFlags;
-
-extern fn spCompile(request: *SlangCompileRequest) SlangResult;
-extern fn spAddTranslationUnit(request: *SlangCompileRequest, source_language: SlangSourceLanguage, name: [*c]const u8) c_int;
-extern fn spAddTranslationUnitSourceFile(request: *SlangCompileRequest, translation_unit_index: c_int, path: [*c]const u8) void;
-extern fn spAddTranslationUnitSourceString(request: *SlangCompileRequest, translation_unit_index: c_int, path: [*c]const u8, source: [*c]const u8) void;
-extern fn spGetEntryPointCode(request: *SlangCompileRequest, entry_point_index: c_int, out_size: *usize) *anyopaque;
-
 // extern fn spGetReflection(request: *SlangCompileRequest) *SlangReflection;
 // extern fn spReflection_GetParameterCount(reflection: *SlangReflection) c_int;
 
 const std = @import("std");
 
+pub extern fn compile_slang(filepath_ptr: [*c]const u8, entrypoint_ptr: [*c]const u8, in_source_str_ptr: [*c]const u8, stage: SlangStage, out_data_len: *usize, out_result: *c_int) ?*anyopaque;
+
 pub fn compileToSpv(
     allocator: std.mem.Allocator,
-    filepath: []const u8,
+    filepath: [:0]const u8,
     entrypoint: [:0]const u8,
     stage: SlangStage,
 ) ![]u8 {
-    const session = spCreateSession();
-    defer spDestroySession(session);
+    const source = try std.fs.cwd().readFileAlloc(allocator, filepath, std.math.maxInt(usize));
+    const str = try std.fmt.allocPrintZ(allocator, "{s}", .{source});
 
-    const req = spCreateCompileRequest(session);
-    defer spDestroyCompileRequest(req);
-    const profile_id = spFindProfile(session, "spirv_1_5".ptr);
+    // var spirv: [*c]u8 = undefined;
+    var spirv_len: usize = 0;
+    var result: c_int = 0;
+    const spirv_ptr = compile_slang(filepath.ptr, entrypoint.ptr, str.ptr, stage, &spirv_len, &result);
 
-    const index = spAddCodeGenTarget(req, .SLANG_SPIRV);
-    spSetTargetProfile(req, index, profile_id);
-    spSetTargetFlags(req, index, .SLANG_TARGET_FLAG_GENERATE_SPIRV_DIRECTLY);
-    spSetTargetForceGLSLScalarBufferLayout(req, index, true);
-
-    const translation_index = spAddTranslationUnit(req, .SLANG_SOURCE_LANGUAGE_SLANG, "".ptr);
-    spAddTranslationUnitSourceFile(req, translation_index, filepath.ptr);
-
-    const entry_point_index = spAddEntryPoint(req, translation_index, entrypoint, stage);
-
-    const res = spCompile(req);
-    if (res.hasFailed()) {
+    if (result != 0) {
         return error.FailedToCompileShader;
     }
 
-    var size_out: usize = undefined;
-    const ptr = spGetEntryPointCode(req, entry_point_index, &size_out);
-    const bytes: [*]u8 = @ptrCast(ptr);
+    const array: [*]u8 = @ptrCast(spirv_ptr);
+    return array[0..spirv_len];
+    // const session = spCreateSession();
+    // defer spDestroySession(session);
 
-    if (size_out == 0) {
-        return error.FailedToCompileShader;
-    }
+    // const req = spCreateCompileRequest(session);
+    // defer spDestroyCompileRequest(req);
+    // const profile_id = spFindProfile(session, "spirv_1_5".ptr);
 
-    return try allocator.dupe(u8, bytes[0..size_out]);
+    // const index = spAddCodeGenTarget(req, .SLANG_SPIRV);
+    // spSetTargetProfile(req, index, profile_id);
+    // spSetTargetFlags(req, index, .SLANG_TARGET_FLAG_GENERATE_SPIRV_DIRECTLY);
+    // spSetTargetForceGLSLScalarBufferLayout(req, index, true);
+
+    // const translation_index = spAddTranslationUnit(req, .SLANG_SOURCE_LANGUAGE_SLANG, "".ptr);
+    // spAddTranslationUnitSourceFile(req, translation_index, filepath.ptr);
+
+    // const entry_point_index = spAddEntryPoint(req, translation_index, entrypoint, stage);
+
+    // const res = spCompile(req);
+    // if (res.hasFailed()) {
+    //     return error.FailedToCompileShader;
+    // }
+
+    // var size_out: usize = undefined;
+    // const ptr = spGetEntryPointCode(req, entry_point_index, &size_out);
+    // const bytes: [*]u8 = @ptrCast(ptr);
+
+    // if (size_out == 0) {
+    //     return error.FailedToCompileShader;
+    // }
+
+    // return try allocator.dupe(u8, bytes[0..size_out]);
 }
 
 // spComputeStringHash

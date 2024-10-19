@@ -52,7 +52,7 @@ pub fn create(gc: *Gc, desc: Self.CreateInfo) !Self {
     });
 
     if (desc.data == .path) {
-        var split = std.mem.splitBackwards(u8, desc.data.path, "/");
+        var split = std.mem.splitBackwardsSequence(u8, desc.data.path, "/");
         const filename = try std.fmt.allocPrint(gc.allocator, "{s}-{s}.spv", .{ desc.entry_point, split.first() });
         const path = try std.fs.path.join(gc.allocator, &.{ "./zig-out", filename });
         const file = try std.fs.cwd().createFile(path, .{});
@@ -226,27 +226,29 @@ fn spvMessageConsumer(
 }
 
 fn optimizeSpirv(allocator: std.mem.Allocator, spirv: []const u8) ![]const u8 {
-    const optimizer = c.spvOptimizerCreate(c.SPV_ENV_VULKAN_1_3);
-    defer c.spvOptimizerDestroy(optimizer);
+    _ = allocator; // autofix
+    // const optimizer = c.spvOptimizerCreate(c.SPV_ENV_VULKAN_1_3);
+    // defer c.spvOptimizerDestroy(optimizer);
 
-    c.spvOptimizerSetMessageConsumer(optimizer, spvMessageConsumer);
-    c.spvOptimizerRegisterPerformancePasses(optimizer);
-    c.spvOptimizerRegisterLegalizationPasses(optimizer);
+    // c.spvOptimizerSetMessageConsumer(optimizer, spvMessageConsumer);
+    // c.spvOptimizerRegisterPerformancePasses(optimizer);
+    // c.spvOptimizerRegisterLegalizationPasses(optimizer);
 
-    const options = c.spvOptimizerOptionsCreate();
-    defer c.spvOptimizerOptionsDestroy(options);
+    // const options = c.spvOptimizerOptionsCreate();
+    // defer c.spvOptimizerOptionsDestroy(options);
 
-    c.spvOptimizerOptionsSetRunValidator(options, true);
+    // c.spvOptimizerOptionsSetRunValidator(options, true);
 
-    const spirv_words_ptr = @as([*]const u32, @ptrCast(@alignCast(spirv.ptr)));
-    const spirv_words = spirv_words_ptr[0 .. spirv.len / @sizeOf(u32)];
+    // const spirv_words_ptr = @as([*]const u32, @ptrCast(@alignCast(spirv.ptr)));
+    // const spirv_words = spirv_words_ptr[0 .. spirv.len / @sizeOf(u32)];
 
-    var optimized_spirv: c.spv_binary = undefined;
-    if (c.spvOptimizerRun(optimizer, spirv_words.ptr, spirv_words.len, &optimized_spirv, options) != c.SPV_SUCCESS) {
-        return error.SpirvOptimizationFailed;
-    }
+    // var optimized_spirv: c.spv_binary = undefined;
+    // if (c.spvOptimizerRun(optimizer, spirv_words.ptr, spirv_words.len, &optimized_spirv, options) != c.SPV_SUCCESS) {
+    //     return error.SpirvOptimizationFailed;
+    // }
 
-    const code_bytes_ptr = @as([*]const u8, @ptrCast(optimized_spirv.*.code));
-    const code_bytes = code_bytes_ptr[0 .. optimized_spirv.*.wordCount * @sizeOf(u32)];
-    return allocator.dupe(u8, code_bytes);
+    // const code_bytes_ptr = @as([*]const u8, @ptrCast(optimized_spirv.*.code));
+    // const code_bytes = code_bytes_ptr[0 .. optimized_spirv.*.wordCount * @sizeOf(u32)];
+    // return allocator.dupe(u8, code_bytes);
+    return spirv;
 }

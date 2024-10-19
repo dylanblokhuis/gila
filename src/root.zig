@@ -461,33 +461,33 @@ pub fn createVmaPool(self: *Self, options: VmaPoolOptions, sample_buffer_usage: 
 pub fn toGpuBytes(input: anytype) []const u8 {
     const T: std.builtin.Type = @typeInfo(@TypeOf(input));
 
-    if (T != .Pointer) {
+    if (T != .pointer) {
         @compileError("toGpuBytes only supports pointers");
     }
 
     const ChildT: std.builtin.Type = @typeInfo(std.meta.Child(@TypeOf(input)));
     const StructT = switch (ChildT) {
-        .Array => @typeInfo(ChildT.Array.child),
+        .array => @typeInfo(ChildT.array.child),
         else => ChildT,
     };
-    if (StructT != .Struct) {
+    if (StructT != .@"struct") {
         @compileError("toGpuBytes only supports structs");
     }
-    if (StructT.Struct.layout != .@"extern") {
+    if (StructT.@"struct".layout != .@"extern") {
         @compileError("toGpuBytes only supports extern structs");
     }
 
     // check if all fields are align(1)
-    inline for (StructT.Struct.fields) |field| {
+    inline for (StructT.@"struct".fields) |field| {
         if (field.alignment != 1) {
             @compileError("toGpuBytes only supports structs with align(1) fields");
         }
-        if (@typeInfo(field.type) == .Vector) {
+        if (@typeInfo(field.type) == .vector) {
             @compileError("toGpuBytes does not support vectors, the compiler will not align them properly");
         }
     }
 
-    return if (T.Pointer.size == .Slice) std.mem.sliceAsBytes(input) else std.mem.asBytes(input);
+    return if (T.pointer.size == .Slice) std.mem.sliceAsBytes(input) else std.mem.asBytes(input);
 }
 
 /// compiles the shaders and recreates the pipeline, but the handle remains the same
